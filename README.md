@@ -53,12 +53,7 @@ Then open the app in your browser as prompted.
 - 📎 Summary of test statistic and p-value
 - 🔁 Permutation count and random seed are adjustable
 
-## 📚 Citation
-
-If you use **BetaSuite** in your research, please cite:
-
-> Lin Y-M, et al. BetaSuite: A visual and statistical interface for beta diversity analysis using PCoA and metadata-driven testing. 2025. *(In prep.)*
 
 ---
 
-Created with ❤️ by Yu-Min Lin and contributors.
+Created by Yu-Min Lin.
