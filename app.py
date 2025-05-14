@@ -131,33 +131,37 @@ def pipeline(distance_file: UploadedFile, metadata_file: UploadedFile):
         fig.savefig(buf, format='png', dpi=1200)
         st.download_button(
             '📎 下載 2D 圖檔 (PNG, 1200 dpi)',
-            data=buf.getvalue(),
+            # data=buf.getvalue(),
             file_name=f'{color_var}_PCoA.png',
             mime='image/png'
         )
 
     elif view_mode == '3D':
-        if all(pc in df_merged.columns for pc in ['PC1', 'PC2', 'PC3']):
-            try:
-                fig3d = px.scatter_3d(
-                    df_merged, x='PC1', y='PC2', z='PC3',
-                    color=color_var,
-                    title=chart_title,
-                    labels={'PC1': 'PC1', 'PC2': 'PC2', 'PC3': 'PC3'},
-                    **color_args
-                )
-                st.plotly_chart(fig3d, use_container_width=True)
 
-                for fmt in ['png', 'pdf', 'svg']:
-                    image_bytes = fig3d.to_image(format=fmt, scale=5)
-                    st.download_button(
-                        f'📎 下載 3D 圖檔 ({fmt.upper()})',
-                        data=image_bytes,
-                        file_name=f"{color_var}_3D_PCoA.{fmt}",
-                        mime='image/svg+xml' if fmt == 'svg' else f'image/{fmt}',
-                    )
-            except Exception as e:
-                st.warning(f'⚠️ 3D 繪圖失敗：{e}')
+        has_pc1_to_3 = True
+        for pc in ['PC1', 'PC2', 'PC3']:
+            if pc not in df_merged.columns:
+                has_pc1_to_3 = False
+                break
+
+        if has_pc1_to_3:
+            fig3d = px.scatter_3d(
+                df_merged, x='PC1', y='PC2', z='PC3',
+                color=color_var,
+                title=chart_title,
+                labels={'PC1': 'PC1', 'PC2': 'PC2', 'PC3': 'PC3'},
+                **color_args
+            )
+            st.plotly_chart(fig3d, use_container_width=True)
+
+            for fmt in ['png', 'pdf', 'svg']:
+                image_bytes = fig3d.to_image(format=fmt, scale=5)
+                st.download_button(
+                    f'📎 下載 3D 圖檔 ({fmt.upper()})',
+                    data=image_bytes,
+                    file_name=f"{color_var}_3D_PCoA.{fmt}",
+                    mime='image/svg+xml' if fmt == 'svg' else f'image/{fmt}',
+                )
         else:
             st.info('⚠️ 無法進行 3D 繪圖（缺少 PC1~PC3）')
 
