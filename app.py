@@ -131,7 +131,7 @@ def pipeline(distance_file: UploadedFile, metadata_file: UploadedFile):
         fig.savefig(buf, format='png', dpi=1200)
         st.download_button(
             '📎 下載 2D 圖檔 (PNG, 1200 dpi)',
-            # data=buf.getvalue(),
+            data=buf.getvalue(),
             file_name=f'{color_var}_PCoA.png',
             mime='image/png'
         )
