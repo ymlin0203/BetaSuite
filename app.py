@@ -91,15 +91,7 @@ def pipeline(distance_file: UploadedFile, metadata_file: UploadedFile):
     view_mode = st.radio('📐 顯示模式', ['2D', '3D'], index=0)
     chart_title = f'PCoA colored by {color_var}'
 
-    # Choose a method to calculate distance
-    distance_metric = st.selectbox(
-        '選擇距離度量方法',
-        ['euclidean', 'braycurtis', 'cityblock', 'cosine', 'jaccard']
-    )
-
-    # Calculate the distance matrix based on the selected distance metric
-    coord_matrix = squareform(pdist(df_merged[[x_axis, y_axis]], metric=distance_metric))
-    distance_matrix = DistanceMatrix(coord_matrix, ids=df_merged['SampleID'])
+    
 
     if view_mode == '2D':
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -189,19 +181,18 @@ def pipeline(distance_file: UploadedFile, metadata_file: UploadedFile):
     else:
         # Data processing
         selected_coords = df_merged[['SampleID', x_axis, y_axis]].copy()
-        coord_matrix = squareform(pdist(selected_coords[[x_axis, y_axis]], metric=distance_metric))
-        distance_matrix = DistanceMatrix(coord_matrix, ids=selected_coords['SampleID'])
+        distance_matrix = full_distance_matrix
 
         # Categorical variable processing (ANOSIM)
         if plot_kind == 'categorical':
             group_series = df_merged.set_index('SampleID').loc[selected_coords['SampleID'], color_var]
             result = anosim(distance_matrix, group_series, permutations=perm_count)
             st.success(f'ANOSIM R = {result["test statistic"]:.4f}, p = {result["p-value"]:.4g}')
-        
         # Continuous variable processing (Mantel test)
         else:
             np.random.seed(random_seed)
-            meta_dist = squareform(pdist(df_merged[[color_var]].values, metric=distance_metric))
+            meta_dist = squareform(pdist(df_merged[[color_var]].values, metric='euclidean'))
+            # Check if the distance matrix is square
             meta_matrix = DistanceMatrix(meta_dist, ids=df_merged['SampleID'])
             stat, p_value, _ = mantel(distance_matrix, meta_matrix, permutations=perm_count)
             st.success(f'Mantel test R = {stat:.4f}, p = {p_value:.4g}')
