@@ -11,8 +11,12 @@ from skbio.stats.distance import DistanceMatrix, anosim, mantel
 import io
 
 
+
+st.set_page_config(page_title='PCoA GUI', layout='wide')
+
+
 def main():
-    st.set_page_config(page_title='PCoA GUI', layout='wide')
+    
     st.title('🧬 PCoA GUI ')
 
     distance_file: UploadedFile = st.file_uploader('📂 上傳距離矩陣 (.tsv / .csv)', type=['tsv', 'csv'])
@@ -204,6 +208,5 @@ def pipeline(distance_file: UploadedFile, metadata_file: UploadedFile):
             st.caption('🔍 Mantel test 是用來檢驗兩個距離矩陣之間的相關性，適用於連續變數。')
 
 # 運行主程式
-main()
 if __name__ == '__main__':
     main()
