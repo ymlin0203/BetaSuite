@@ -12,10 +12,8 @@ import io
 
 
 def main():
-
-    st.set_page_config(page_title='PCoA GUI v27', layout='wide')
-    st.title('🧬 PCoA GUI v27 (ANOSIM / Mantel 自動判斷 + 高畫質圖表輸出)')
-    st.caption('✨ 自動 PCoA + 變數型態統計分析 + 高品質 2D / 3D 輸出')
+    st.set_page_config(page_title='PCoA GUI', layout='wide')
+    st.title('🧬 PCoA GUI ')
 
     distance_file: UploadedFile = st.file_uploader('📂 上傳距離矩陣 (.tsv / .csv)', type=['tsv', 'csv'])
     metadata_file: UploadedFile = st.file_uploader('📂 上傳 metadata (.xlsx / .csv)', type=['xlsx', 'csv'])
@@ -24,10 +22,7 @@ def main():
         st.info('📥 請依序上傳距離矩陣與 metadata 檔案')
         return
 
-    try:
-        pipeline(distance_file=distance_file, metadata_file=metadata_file)
-    except Exception as e:
-        st.error(f'❗ 發生錯誤：{e}')
+    pipeline(distance_file=distance_file, metadata_file=metadata_file)
 
 
 def pipeline(distance_file: UploadedFile, metadata_file: UploadedFile):
@@ -71,7 +66,7 @@ def pipeline(distance_file: UploadedFile, metadata_file: UploadedFile):
 
     mode = st.radio('📌 選擇變數型態', ['自動偵測', '類別型', '連續型'], index=0)
 
-    # Filter out empty or whitespace-only values
+    #  Filter out empty or whitespace-only values
     df_merged = df_merged[df_merged[color_var].notna() & (df_merged[color_var].astype(str).str.strip() != '')]
 
     if df_merged.empty:
@@ -91,6 +86,16 @@ def pipeline(distance_file: UploadedFile, metadata_file: UploadedFile):
 
     view_mode = st.radio('📐 顯示模式', ['2D', '3D'], index=0)
     chart_title = f'PCoA colored by {color_var}'
+
+    # Choose a method to calculate distance
+    distance_metric = st.selectbox(
+        '選擇距離度量方法',
+        ['euclidean', 'braycurtis', 'cityblock', 'cosine', 'jaccard']
+    )
+
+    # Calculate the distance matrix based on the selected distance metric
+    coord_matrix = squareform(pdist(df_merged[[x_axis, y_axis]], metric=distance_metric))
+    distance_matrix = DistanceMatrix(coord_matrix, ids=df_merged['SampleID'])
 
     if view_mode == '2D':
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -119,8 +124,8 @@ def pipeline(distance_file: UploadedFile, metadata_file: UploadedFile):
             )
             plt.colorbar(sc, ax=ax).set_label(color_var)
 
-        var_x = pcoa_results.proportion_explained[x_axis] * 100
-        var_y = pcoa_results.proportion_explained[y_axis] * 100
+        var_x = pcoa_results.proportion_explained[x_axis] * 150
+        var_y = pcoa_results.proportion_explained[y_axis] * 150
         ax.set_xlabel(f'{x_axis} ({var_x:.1f}%)', fontsize=13)
         ax.set_ylabel(f'{y_axis} ({var_y:.1f}%)', fontsize=13)
         ax.set_title(chart_title, fontsize=14)
@@ -131,7 +136,7 @@ def pipeline(distance_file: UploadedFile, metadata_file: UploadedFile):
         fig.savefig(buf, format='png', dpi=1200)
         st.download_button(
             '📎 下載 2D 圖檔 (PNG, 1200 dpi)',
-            # data=buf.getvalue(),
+            data=buf.getvalue(),
             file_name=f'{color_var}_PCoA.png',
             mime='image/png'
         )
@@ -165,27 +170,40 @@ def pipeline(distance_file: UploadedFile, metadata_file: UploadedFile):
         else:
             st.info('⚠️ 無法進行 3D 繪圖（缺少 PC1~PC3）')
 
-    st.subheader('📊 統計分析結果')
+    # Analysis results
     perm_count = st.number_input('Permutation 次數', min_value=10, step=100, value=999)
     random_seed = st.number_input('隨機種子', min_value=1, value=42, step=1)
     st.caption('✅ 類別變因 → ANOSIM；連續變因 → Mantel test')
-    try:
+
+    # Check if the data field exists
+    if x_axis not in df_merged.columns:
+        st.warning(f"⚠️ 無此欄位: {x_axis} 在資料中找不到，請確認欄位名稱。")
+    elif y_axis not in df_merged.columns:
+        st.warning(f"⚠️ 無此欄位: {y_axis} 在資料中找不到，請確認欄位名稱。")
+    elif color_var not in df_merged.columns:
+        st.warning(f"⚠️ 無此欄位: {color_var} 在資料中找不到，請確認欄位名稱。")
+    else:
+        # Data processing
         selected_coords = df_merged[['SampleID', x_axis, y_axis]].copy()
-        coord_matrix = squareform(pdist(selected_coords[[x_axis, y_axis]], metric='euclidean'))
+        coord_matrix = squareform(pdist(selected_coords[[x_axis, y_axis]], metric=distance_metric))
         distance_matrix = DistanceMatrix(coord_matrix, ids=selected_coords['SampleID'])
 
+        # Categorical variable processing (ANOSIM)
         if plot_kind == 'categorical':
             group_series = df_merged.set_index('SampleID').loc[selected_coords['SampleID'], color_var]
             result = anosim(distance_matrix, group_series, permutations=perm_count)
             st.success(f'ANOSIM R = {result["test statistic"]:.4f}, p = {result["p-value"]:.4g}')
+        
+        # Continuous variable processing (Mantel test)
         else:
             np.random.seed(random_seed)
-            meta_dist = squareform(pdist(df_merged[[color_var]].values, metric='euclidean'))
+            meta_dist = squareform(pdist(df_merged[[color_var]].values, metric=distance_metric))
             meta_matrix = DistanceMatrix(meta_dist, ids=df_merged['SampleID'])
             stat, p_value, _ = mantel(distance_matrix, meta_matrix, permutations=perm_count)
             st.success(f'Mantel test R = {stat:.4f}, p = {p_value:.4g}')
-    except Exception as e:
-        st.warning(f'⚠️ 統計分析失敗：{e}')
+            st.caption('🔍 Mantel test 是用來檢驗兩個距離矩陣之間的相關性，適用於連續變數。')
 
-
+# 運行主程式
 main()
+if __name__ == '__main__':
+    main()
