@@ -25,7 +25,7 @@ def main():
         st.info('📥 請依序上傳距離矩陣與 metadata 檔案')
         return
 
-    Pipeline().main()
+    Pipeline().main(distance_file, metadata_file)
 
 
 class Pipeline:
