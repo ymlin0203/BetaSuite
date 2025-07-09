@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
 import numpy as np
+import random
 from scipy.spatial.distance import pdist, squareform
 from skbio.stats.ordination import pcoa
 from skbio.stats.distance import DistanceMatrix, anosim, mantel
@@ -183,22 +184,24 @@ class Pipeline:
             # Data processing
             selected_coords = df_merged[['SampleID', x_axis, y_axis]].copy()
             distance_matrix = full_distance_matrix.filter(df_merged['SampleID'].tolist())
-
+            
+            # 固定亂數種子（ANOSIM 和 Mantel 都會使用）
+            random.seed(random_seed)
+            np.random.seed(random_seed)
+            
             # Categorical variable processing (ANOSIM)
             if plot_kind == 'categorical':
                 group_series = df_merged.set_index('SampleID').loc[selected_coords['SampleID'], color_var]
                 result = anosim(distance_matrix, group_series, permutations=perm_count)
                 st.success(f'ANOSIM R = {result["test statistic"]:.4f}, p = {result["p-value"]:.4g}')
+            
             # Continuous variable processing (Mantel test)
             else:
-                np.random.seed(random_seed)
                 meta_dist = squareform(pdist(df_merged[[color_var]].values, metric='euclidean'))
-                # Check if the distance matrix is square
                 meta_matrix = DistanceMatrix(meta_dist, ids=df_merged['SampleID'])
                 stat, p_value, _ = mantel(distance_matrix, meta_matrix, permutations=perm_count)
                 st.success(f'Mantel test R = {stat:.4f}, p = {p_value:.4g}')
                 st.caption('🔍 Mantel test 是用來檢驗兩個距離矩陣之間的相關性，適用於連續變數。')
-
 
 if __name__ == '__main__':
     main()
