@@ -121,16 +121,27 @@ class Pipeline:
                 )
                 plt.colorbar(sc, ax=ax).set_label(color_var)
 
+            pc_cols = [col for col in df_merged.columns if col.startswith('PC')]
+
+            if len(pc_cols) < 2:
+                st.error('⚠️ PCoA 結果不足兩個主成分，無法繪圖')
+                st.stop()
+
+            x_axis = st.selectbox('選擇 X 軸', pc_cols, index=0)
+            y_axis = st.selectbox('選擇 Y 軸', pc_cols, index=1 if len(pc_cols) > 1 else 0)
+
+            # 🔺要先取得 index，再放入標籤用的比例說明
             pc_index_x = int(x_axis.replace("PC", "")) - 1
             pc_index_y = int(y_axis.replace("PC", "")) - 1
             var_x = pcoa_results.proportion_explained.iloc[pc_index_x] * 150
             var_y = pcoa_results.proportion_explained.iloc[pc_index_y] * 150
+            
             ax.set_xlabel(f'{x_axis} ({var_x:.1f}%)', fontsize=13)
             ax.set_ylabel(f'{y_axis} ({var_y:.1f}%)', fontsize=13)
             ax.set_title(chart_title, fontsize=14)
             sns.despine()
             st.pyplot(fig)
-
+            
             buf = io.BytesIO()
             fig.savefig(buf, format='png', dpi=1200)
             st.download_button(
