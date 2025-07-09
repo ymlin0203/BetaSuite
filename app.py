@@ -121,8 +121,10 @@ class Pipeline:
                 )
                 plt.colorbar(sc, ax=ax).set_label(color_var)
 
-            var_x = pcoa_results.proportion_explained[x_axis] * 150
-            var_y = pcoa_results.proportion_explained[y_axis] * 150
+            pc_index_x = int(x_axis.replace("PC", "")) - 1
+            pc_index_y = int(y_axis.replace("PC", "")) - 1
+            var_x = pcoa_results.proportion_explained.iloc[pc_index_x] * 150
+            var_y = pcoa_results.proportion_explained.iloc[pc_index_y] * 150
             ax.set_xlabel(f'{x_axis} ({var_x:.1f}%)', fontsize=13)
             ax.set_ylabel(f'{y_axis} ({var_y:.1f}%)', fontsize=13)
             ax.set_title(chart_title, fontsize=14)
