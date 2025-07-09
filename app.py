@@ -121,27 +121,14 @@ class Pipeline:
                 )
                 plt.colorbar(sc, ax=ax).set_label(color_var)
 
-            pc_cols = [col for col in df_merged.columns if col.startswith('PC')]
-
-            if len(pc_cols) < 2:
-                st.error('⚠️ PCoA 結果不足兩個主成分，無法繪圖')
-                st.stop()
-
-            x_axis = st.selectbox('選擇 X 軸', pc_cols, index=0)
-            y_axis = st.selectbox('選擇 Y 軸', pc_cols, index=1 if len(pc_cols) > 1 else 0)
-
-            # 🔺要先取得 index，再放入標籤用的比例說明
-            pc_index_x = int(x_axis.replace("PC", "")) - 1
-            pc_index_y = int(y_axis.replace("PC", "")) - 1
-            var_x = pcoa_results.proportion_explained.iloc[pc_index_x] * 150
-            var_y = pcoa_results.proportion_explained.iloc[pc_index_y] * 150
-            
+            var_x = pcoa_results.proportion_explained[x_axis] * 150
+            var_y = pcoa_results.proportion_explained[y_axis] * 150
             ax.set_xlabel(f'{x_axis} ({var_x:.1f}%)', fontsize=13)
             ax.set_ylabel(f'{y_axis} ({var_y:.1f}%)', fontsize=13)
             ax.set_title(chart_title, fontsize=14)
             sns.despine()
             st.pyplot(fig)
-            
+
             buf = io.BytesIO()
             fig.savefig(buf, format='png', dpi=1200)
             st.download_button(
@@ -194,25 +181,21 @@ class Pipeline:
             st.warning(f"⚠️ 無此欄位: {color_var} 在資料中找不到，請確認欄位名稱。")
         else:
             # Data processing
-            visible_ids = df_merged['SampleID'].tolist()
-            filtered_matrix = full_distance_matrix.filter(visible_ids)
-    
+            selected_coords = df_merged[['SampleID', x_axis, y_axis]].copy()
+            distance_matrix = full_distance_matrix
+
             # Categorical variable processing (ANOSIM)
             if plot_kind == 'categorical':
-                visible_ids = df_merged['SampleID'].tolist()
-                filtered_matrix = full_distance_matrix.filter(visible_ids)
-                group_series = df_merged.set_index('SampleID').reindex(visible_ids)[color_var]
-                result = anosim(filtered_matrix, group_series, permutations=perm_count)
+                group_series = df_merged.set_index('SampleID').loc[selected_coords['SampleID'], color_var]
+                result = anosim(distance_matrix, group_series, permutations=perm_count)
                 st.success(f'ANOSIM R = {result["test statistic"]:.4f}, p = {result["p-value"]:.4g}')
             # Continuous variable processing (Mantel test)
             else:
-                visible_ids = df_merged['SampleID'].tolist()
-                filtered_matrix = full_distance_matrix.filter(visible_ids)
-
                 np.random.seed(random_seed)
                 meta_dist = squareform(pdist(df_merged[[color_var]].values, metric='euclidean'))
-                meta_matrix = DistanceMatrix(meta_dist, ids=visible_ids)
-                stat, p_value, _ = mantel(filtered_matrix, meta_matrix, permutations=perm_count)
+                # Check if the distance matrix is square
+                meta_matrix = DistanceMatrix(meta_dist, ids=df_merged['SampleID'])
+                stat, p_value, _ = mantel(distance_matrix, meta_matrix, permutations=perm_count)
                 st.success(f'Mantel test R = {stat:.4f}, p = {p_value:.4g}')
                 st.caption('🔍 Mantel test 是用來檢驗兩個距離矩陣之間的相關性，適用於連續變數。')
 
