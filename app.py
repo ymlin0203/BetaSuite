@@ -182,7 +182,7 @@ class Pipeline:
         else:
             # Data processing
             selected_coords = df_merged[['SampleID', x_axis, y_axis]].copy()
-            distance_matrix = full_distance_matrix
+            distance_matrix = full_distance_matrix.filter(df_merged['SampleID'].tolist())
 
             # Categorical variable processing (ANOSIM)
             if plot_kind == 'categorical':
