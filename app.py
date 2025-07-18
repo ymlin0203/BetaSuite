@@ -131,14 +131,15 @@ class Pipeline:
             st.pyplot(fig)
 
             buf = io.BytesIO()
-            fig.savefig(buf, format='png', dpi=1200)
+            fig.savefig(buf, format='png', dpi=1200, bbox_inches='tight')
+            buf.seek(0)
             st.download_button(
                 '📎 下載 2D 圖檔 (PNG, 1200 dpi)',
-                data=buf.getvalue(),
+                data=buf,
                 file_name=f'{color_var}_PCoA.png',
                 mime='image/png'
             )
-
+            plt.close(fig)
         elif view_mode == '3D':
 
             has_pc1_to_3 = True
