@@ -89,11 +89,10 @@ class Pipeline:
         view_mode = st.radio('📐 顯示模式', ['2D', '3D'], index=0)
         chart_title = f'PCoA colored by {color_var}'
 
-        # ✅ 新增：2D 顯示範圍設定（讓不同樣本數也一致）
+        # ✅ 2D 顯示範圍設定（讓不同樣本數也一致）
         st.subheader('📏 2D 顯示範圍設定')
         axis_mode = st.radio('座標範圍模式', ['自動（每次資料不同）', '固定等比例（推薦）', '手動固定'], index=1)
 
-        # 注意：這裡用「目前選的 x/y 軸」來計算範圍（最符合你的需求）
         x_vals_tmp = (df_merged[x_axis] * (-1 if reverse_x else 1)).astype(float)
         y_vals_tmp = (df_merged[y_axis] * (-1 if reverse_y else 1)).astype(float)
 
@@ -114,8 +113,8 @@ class Pipeline:
             ylim = None
 
         if view_mode == '2D':
-            # ✅ 改成正方形視窗更直觀（等比例更漂亮）
-            fig, ax = plt.subplots(figsize=(8, 8))
+            # ✅ 版面穩定：legend / colorbar 都更容易對齊
+            fig, ax = plt.subplots(figsize=(8, 8), constrained_layout=True)
 
             x_vals = x_vals_tmp
             y_vals = y_vals_tmp
@@ -130,7 +129,13 @@ class Pipeline:
                     edgecolor='black',
                     ax=ax
                 )
-                ax.legend(title=color_var, bbox_to_anchor=(1.05, 1), loc='upper left')
+                # ✅ legend 更像 colorbar：貼齊右側、從上對齊
+                ax.legend(
+                    title=color_var,
+                    bbox_to_anchor=(1.02, 1),
+                    loc='upper left',
+                    borderaxespad=0.0
+                )
             else:
                 sc = ax.scatter(
                     x_vals,
@@ -140,9 +145,18 @@ class Pipeline:
                     s=60,
                     edgecolors='black'
                 )
-                plt.colorbar(sc, ax=ax).set_label(color_var)
+                # ✅ colorbar 與主圖同高、對齊（不要用 plt.colorbar）
+                cbar = fig.colorbar(
+                    sc,
+                    ax=ax,
+                    fraction=0.046,
+                    pad=0.04,
+                    shrink=1.0,
+                    aspect=25
+                )
+                cbar.set_label(color_var)
 
-            # ✅ 百分比修正：proportion_explained 本來就是 0~1，應乘 100
+            # ✅ 百分比：proportion_explained (0~1) → %
             var_x = float(pcoa_results.proportion_explained[x_axis] * 100)
             var_y = float(pcoa_results.proportion_explained[y_axis] * 100)
             ax.set_xlabel(f'{x_axis} ({var_x:.1f}%)', fontsize=13)
@@ -154,10 +168,9 @@ class Pipeline:
                 ax.set_xlim(*xlim)
                 ax.set_ylim(*ylim)
 
-            # ✅ 等比例（非常重要）
             ax.set_aspect('equal', adjustable='box')
 
-            # ✅ 外框包起來：不要用 sns.despine()，改成強制顯示四邊框
+            # ✅ 外框包起來
             for spine in ax.spines.values():
                 spine.set_visible(True)
                 spine.set_linewidth(1.2)
@@ -208,7 +221,6 @@ class Pipeline:
         random_seed = st.number_input('隨機種子', min_value=1, value=42, step=1)
         st.caption('✅ 類別變因 → ANOSIM；連續變因 → Mantel test')
 
-        # Check if the data field exists
         if x_axis not in df_merged.columns:
             st.warning(f"⚠️ 無此欄位: {x_axis} 在資料中找不到，請確認欄位名稱。")
         elif y_axis not in df_merged.columns:
