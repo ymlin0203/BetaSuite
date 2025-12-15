@@ -11,12 +11,10 @@ from skbio.stats.ordination import pcoa
 from skbio.stats.distance import DistanceMatrix, anosim, mantel
 import io
 
-
 st.set_page_config(page_title='PCoA GUI', layout='wide')
 
 
 def main():
-    
     st.title('🧬 PCoA GUI ')
 
     distance_file: UploadedFile = st.file_uploader('📂 上傳距離矩陣 (.tsv / .csv)', type=['tsv', 'csv'])
@@ -30,7 +28,6 @@ def main():
 
 
 class Pipeline:
-
     def main(self, distance_file: UploadedFile, metadata_file: UploadedFile):
         # Read and process distance matrix
         df_dist = pd.read_csv(distance_file, sep=None, engine='python', index_col=0)
@@ -72,9 +69,8 @@ class Pipeline:
 
         mode = st.radio('📌 選擇變數型態', ['自動偵測', '類別型', '連續型'], index=0)
 
-        #  Filter out empty or whitespace-only values
+        # Filter out empty or whitespace-only values
         df_merged = df_merged[df_merged[color_var].notna() & (df_merged[color_var].astype(str).str.strip() != '')]
-
         if df_merged.empty:
             st.error('🚩 上色變數無有效資料')
             st.stop()
@@ -93,12 +89,36 @@ class Pipeline:
         view_mode = st.radio('📐 顯示模式', ['2D', '3D'], index=0)
         chart_title = f'PCoA colored by {color_var}'
 
-        
+        # ✅ 新增：2D 顯示範圍設定（讓不同樣本數也一致）
+        st.subheader('📏 2D 顯示範圍設定')
+        axis_mode = st.radio('座標範圍模式', ['自動（每次資料不同）', '固定等比例（推薦）', '手動固定'], index=1)
+
+        # 注意：這裡用「目前選的 x/y 軸」來計算範圍（最符合你的需求）
+        x_vals_tmp = (df_merged[x_axis] * (-1 if reverse_x else 1)).astype(float)
+        y_vals_tmp = (df_merged[y_axis] * (-1 if reverse_y else 1)).astype(float)
+
+        if axis_mode == '固定等比例（推薦）':
+            pad_ratio = st.slider('邊界留白比例', 0.0, 0.5, 0.10, 0.01)
+            limit = float(np.max(np.abs(np.r_[x_vals_tmp.values, y_vals_tmp.values])) * (1.0 + pad_ratio))
+            xlim = (-limit, limit)
+            ylim = (-limit, limit)
+        elif axis_mode == '手動固定':
+            x_min = st.number_input('X 最小值', value=float(np.min(x_vals_tmp.values)))
+            x_max = st.number_input('X 最大值', value=float(np.max(x_vals_tmp.values)))
+            y_min = st.number_input('Y 最小值', value=float(np.min(y_vals_tmp.values)))
+            y_max = st.number_input('Y 最大值', value=float(np.max(y_vals_tmp.values)))
+            xlim = (x_min, x_max)
+            ylim = (y_min, y_max)
+        else:
+            xlim = None
+            ylim = None
 
         if view_mode == '2D':
-            fig, ax = plt.subplots(figsize=(8, 6))
-            x_vals = df_merged[x_axis] * (-1 if reverse_x else 1)
-            y_vals = df_merged[y_axis] * (-1 if reverse_y else 1)
+            # ✅ 改成正方形視窗更直觀（等比例更漂亮）
+            fig, ax = plt.subplots(figsize=(8, 8))
+
+            x_vals = x_vals_tmp
+            y_vals = y_vals_tmp
 
             if plot_kind == 'categorical':
                 sns.scatterplot(
@@ -122,12 +142,26 @@ class Pipeline:
                 )
                 plt.colorbar(sc, ax=ax).set_label(color_var)
 
-            var_x = pcoa_results.proportion_explained[x_axis] * 150
-            var_y = pcoa_results.proportion_explained[y_axis] * 150
+            # ✅ 百分比修正：proportion_explained 本來就是 0~1，應乘 100
+            var_x = float(pcoa_results.proportion_explained[x_axis] * 100)
+            var_y = float(pcoa_results.proportion_explained[y_axis] * 100)
             ax.set_xlabel(f'{x_axis} ({var_x:.1f}%)', fontsize=13)
             ax.set_ylabel(f'{y_axis} ({var_y:.1f}%)', fontsize=13)
             ax.set_title(chart_title, fontsize=14)
-            sns.despine()
+
+            # ✅ 套用固定範圍 + 等比例
+            if xlim is not None and ylim is not None:
+                ax.set_xlim(*xlim)
+                ax.set_ylim(*ylim)
+
+            # ✅ 等比例（非常重要）
+            ax.set_aspect('equal', adjustable='box')
+
+            # ✅ 外框包起來：不要用 sns.despine()，改成強制顯示四邊框
+            for spine in ax.spines.values():
+                spine.set_visible(True)
+                spine.set_linewidth(1.2)
+
             st.pyplot(fig)
 
             buf = io.BytesIO()
@@ -140,8 +174,8 @@ class Pipeline:
                 mime='image/png'
             )
             plt.close(fig)
-        elif view_mode == '3D':
 
+        elif view_mode == '3D':
             has_pc1_to_3 = True
             for pc in ['PC1', 'PC2', 'PC3']:
                 if pc not in df_merged.columns:
@@ -182,27 +216,23 @@ class Pipeline:
         elif color_var not in df_merged.columns:
             st.warning(f"⚠️ 無此欄位: {color_var} 在資料中找不到，請確認欄位名稱。")
         else:
-            # Data processing
             selected_coords = df_merged[['SampleID', x_axis, y_axis]].copy()
             distance_matrix = full_distance_matrix.filter(df_merged['SampleID'].tolist())
-            
-            # 固定亂數種子（ANOSIM 和 Mantel 都會使用）
+
             random.seed(random_seed)
             np.random.seed(random_seed)
-            
-            # Categorical variable processing (ANOSIM)
+
             if plot_kind == 'categorical':
                 group_series = df_merged.set_index('SampleID').loc[selected_coords['SampleID'], color_var]
                 result = anosim(distance_matrix, group_series, permutations=perm_count)
                 st.success(f'ANOSIM R = {result["test statistic"]:.4f}, p = {result["p-value"]:.4g}')
-            
-            # Continuous variable processing (Mantel test)
             else:
                 meta_dist = squareform(pdist(df_merged[[color_var]].values, metric='euclidean'))
                 meta_matrix = DistanceMatrix(meta_dist, ids=df_merged['SampleID'])
                 stat, p_value, _ = mantel(distance_matrix, meta_matrix, permutations=perm_count)
                 st.success(f'Mantel test R = {stat:.4f}, p = {p_value:.4g}')
                 st.caption('🔍 Mantel test 是用來檢驗兩個距離矩陣之間的相關性，適用於連續變數。')
+
 
 if __name__ == '__main__':
     main()
