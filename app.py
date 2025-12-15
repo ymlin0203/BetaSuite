@@ -11,6 +11,9 @@ from skbio.stats.ordination import pcoa
 from skbio.stats.distance import DistanceMatrix, anosim, mantel
 import io
 
+# ✅ NEW: 讓 colorbar 跟主圖同高、完全對齊
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
 st.set_page_config(page_title='PCoA GUI', layout='wide')
 
 
@@ -113,7 +116,6 @@ class Pipeline:
             ylim = None
 
         if view_mode == '2D':
-            # ✅ 版面穩定：legend / colorbar 都更容易對齊
             fig, ax = plt.subplots(figsize=(8, 8), constrained_layout=True)
 
             x_vals = x_vals_tmp
@@ -129,7 +131,6 @@ class Pipeline:
                     edgecolor='black',
                     ax=ax
                 )
-                # ✅ legend 更像 colorbar：貼齊右側、從上對齊
                 ax.legend(
                     title=color_var,
                     bbox_to_anchor=(1.02, 1),
@@ -145,32 +146,25 @@ class Pipeline:
                     s=60,
                     edgecolors='black'
                 )
-                # ✅ colorbar 與主圖同高、對齊（不要用 plt.colorbar）
-                cbar = fig.colorbar(
-                    sc,
-                    ax=ax,
-                    fraction=0.046,
-                    pad=0.04,
-                    shrink=1.0,
-                    aspect=25
-                )
+
+                # ✅ NEW: colorbar 高度與主圖方框完全一致
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes("right", size="4%", pad=0.08)  # 寬度/距離可微調
+                cbar = fig.colorbar(sc, cax=cax)
                 cbar.set_label(color_var)
 
-            # ✅ 百分比：proportion_explained (0~1) → %
             var_x = float(pcoa_results.proportion_explained[x_axis] * 100)
             var_y = float(pcoa_results.proportion_explained[y_axis] * 100)
             ax.set_xlabel(f'{x_axis} ({var_x:.1f}%)', fontsize=13)
             ax.set_ylabel(f'{y_axis} ({var_y:.1f}%)', fontsize=13)
             ax.set_title(chart_title, fontsize=14)
 
-            # ✅ 套用固定範圍 + 等比例
             if xlim is not None and ylim is not None:
                 ax.set_xlim(*xlim)
                 ax.set_ylim(*ylim)
 
             ax.set_aspect('equal', adjustable='box')
 
-            # ✅ 外框包起來
             for spine in ax.spines.values():
                 spine.set_visible(True)
                 spine.set_linewidth(1.2)
@@ -216,7 +210,6 @@ class Pipeline:
             else:
                 st.info('⚠️ 無法進行 3D 繪圖（缺少 PC1~PC3）')
 
-        # Analysis results
         perm_count = st.number_input('Permutation 次數', min_value=10, step=100, value=999)
         random_seed = st.number_input('隨機種子', min_value=1, value=42, step=1)
         st.caption('✅ 類別變因 → ANOSIM；連續變因 → Mantel test')
