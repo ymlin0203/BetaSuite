@@ -1,754 +1,362 @@
-"""
-core_microbiota_heatmap.py  –  Universal core microbiota analysis
-==================================================================
-
-Run WITHOUT arguments → interactive GUI (folder picker pops up)
-Run WITH  arguments  → command-line mode
-
-Step 1 │ Full-dataset heatmap  (all samples)
-Step 2 │ Per-group elbow plot  (fixed abundance = FIXED_ABUNDANCE %)
-Step 3 │ Per-group species CSV  (all prevalence levels)
-
-Usage
-─────
-# GUI mode (double-click or run without args):
-python core_microbiota_heatmap.py
-
-# Command-line – point to a folder:
-python core_microbiota_heatmap.py --data-dir 26_0101_CMC_all_data/
-
-# Command-line – specify files manually:
-python core_microbiota_heatmap.py \\
-    --tsv  species-table.tsv \\
-    --meta sample-sheet.csv \\
-    --meta-sample-col "Sample " \\
-    --meta-group-col  "Group" \\
-    --out  output/
-"""
-
-import argparse
-import glob
-import itertools
-import os
 import sys
-
-import matplotlib.cm as cm
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-
-try:
-    from scipy.stats import fisher_exact, mannwhitneyu
-    from statsmodels.stats.multitest import multipletests
-except ImportError:
-    print("\n[錯誤] 缺少必需的統計套件。")
-    print("請先安裝 scipy 與 statsmodels。在終端機執行以下指令：")
-    print("  pip install scipy statsmodels\n")
-    sys.exit(1)
-# ──────────────────────────────────────────────────────────────────────────────
-# Cutoff settings  (edit here to change defaults)
-# ──────────────────────────────────────────────────────────────────────────────
-
-HEATMAP_ABUNDANCE_CUTOFFS  = [0, 0.01, 0.1, 1, 5, 10]   # %
-HEATMAP_PREVALENCE_CUTOFFS = list(range(0, 101, 5))       # 0, 5 … 100 %
-
-FIXED_ABUNDANCE          = 0.01                           # % (Steps 2 & 3)
-ELBOW_PREVALENCE_CUTOFFS = list(range(0, 101, 5))         # 0, 5 … 100 %
-
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# File helpers
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _find_files(folder: str, ext: str) -> list[str]:
-    """Find all files with *ext* in folder and one level of subfolders."""
-    found = glob.glob(os.path.join(folder, f'*{ext}'))
-    found += glob.glob(os.path.join(folder, '*', f'*{ext}'))
-    return sorted(set(found))
-
-
-def _auto_discover(data_dir: str) -> tuple[str, str]:
-    """
-    Auto-discover TSV and CSV inside data_dir.
-    - Exactly 1 found → auto-select
-    - Multiple found  → list them and exit with instructions
-    """
-    tsv_files = _find_files(data_dir, '.tsv')
-    csv_files = _find_files(data_dir, '.csv')
-
-    if len(tsv_files) == 0:
-        raise FileNotFoundError(
-            f'\n  No .tsv found in: {data_dir}\n'
-            f'  → Put your taxon table there, or use --tsv.')
-    elif len(tsv_files) == 1:
-        tsv_path = tsv_files[0]
-        print(f'  [auto] TSV  → {tsv_path}')
-    else:
-        print(f'\n  Multiple .tsv files in {data_dir}:')
-        for i, f in enumerate(tsv_files, 1):
-            print(f'    [{i}] {f}')
-        print('\n  → Use --tsv <path> to specify which one.')
-        raise SystemExit(1)
-
-    if len(csv_files) == 0:
-        raise FileNotFoundError(
-            f'\n  No .csv found in: {data_dir}\n'
-            f'  → Put your sample sheet there, or use --meta.')
-    elif len(csv_files) == 1:
-        meta_path = csv_files[0]
-        print(f'  [auto] Meta → {meta_path}')
-    else:
-        print(f'\n  Multiple .csv files in {data_dir}:')
-        for i, f in enumerate(csv_files, 1):
-            print(f'    [{i}] {f}')
-        print('\n  → Use --meta <path> to specify which one.')
-        raise SystemExit(1)
-
-    return tsv_path, meta_path
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# GUI interactive mode
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _pick_from_list(root, items: list[str], title: str, prompt: str) -> str:
-    """Listbox dialog; returns the selected item path."""
-    import tkinter as tk
-
-    selected = tk.StringVar(value='')
-    win = tk.Toplevel(root)
-    win.title(title)
-    win.resizable(False, False)
-    win.grab_set()
-
-    tk.Label(win, text=prompt, wraplength=520,
-             justify='left', padx=12, pady=8).pack(anchor='w')
-
-    frame = tk.Frame(win)
-    frame.pack(fill='both', expand=True, padx=12)
-
-    sb = tk.Scrollbar(frame, orient='vertical')
-    lb = tk.Listbox(frame, yscrollcommand=sb.set, selectmode='single',
-                    width=90, height=min(len(items), 12),
-                    font=('Consolas', 9))
-    sb.config(command=lb.yview)
-    sb.pack(side='right', fill='y')
-    lb.pack(side='left', fill='both', expand=True)
-
-    base = os.path.commonpath(items) if len(items) > 1 else os.path.dirname(items[0])
-    for item in items:
-        lb.insert('end', os.path.relpath(item, base))
-    lb.selection_set(0)
-
-    def confirm():
-        idx = lb.curselection()
-        if idx:
-            selected.set(items[idx[0]])
-        win.destroy()
-
-    tk.Button(win, text='確認選擇', command=confirm,
-              width=14, pady=4).pack(pady=10)
-    win.wait_window()
-    return selected.get()
-
-
-def _gui_pick() -> tuple[str, str, str]:
-    """
-    Full GUI flow.  Returns (tsv_path, meta_path, out_dir).
-    """
-    import tkinter as tk
-    from tkinter import filedialog, messagebox
-
-    root = tk.Tk()
-    root.withdraw()
-
-    # Step 1 – choose folder
-    messagebox.showinfo(
-        '核心菌相分析',
-        '步驟 1／3\n\n請選擇實驗資料夾\n'
-        '（內含 .tsv 菌相表  和  .csv 樣本分組表）')
-    data_dir = filedialog.askdirectory(title='選擇實驗資料夾')
-    if not data_dir:
-        raise SystemExit('未選擇資料夾，程式結束。')
-
-    tsv_files = _find_files(data_dir, '.tsv')
-    csv_files = _find_files(data_dir, '.csv')
-
-    # Step 2 – pick TSV
-    if len(tsv_files) == 0:
-        messagebox.showerror('找不到 TSV',
-                             f'在以下路徑找不到任何 .tsv 檔案：\n{data_dir}')
-        raise SystemExit(1)
-    elif len(tsv_files) == 1:
-        tsv_path = tsv_files[0]
-        print(f'  [GUI] TSV 自動選取 → {tsv_path}')
-    else:
-        tsv_path = _pick_from_list(
-            root, tsv_files,
-            title='選擇菌相表',
-            prompt='步驟 2／3  ─  找到多個 .tsv，請選擇要分析的菌相表：')
-        if not tsv_path:
-            raise SystemExit('未選擇 TSV，程式結束。')
-
-    # Step 3 – pick CSV
-    if len(csv_files) == 0:
-        messagebox.showerror('找不到 CSV',
-                             f'在以下路徑找不到任何 .csv 檔案：\n{data_dir}')
-        raise SystemExit(1)
-    elif len(csv_files) == 1:
-        meta_path = csv_files[0]
-        print(f'  [GUI] Meta 自動選取 → {meta_path}')
-    else:
-        meta_path = _pick_from_list(
-            root, csv_files,
-            title='選擇樣本分組表',
-            prompt='步驟 3／3  ─  找到多個 .csv，請選擇樣本分組表（sample sheet）：')
-        if not meta_path:
-            raise SystemExit('未選擇樣本分組表，程式結束。')
-
-    out_dir = os.path.join(data_dir, 'core_microbiota_output')
-    root.destroy()
-
-    print(f'  [GUI] 資料夾 : {data_dir}')
-    print(f'  [GUI] TSV    : {tsv_path}')
-    print(f'  [GUI] Meta   : {meta_path}')
-    print(f'  [GUI] 輸出至 : {out_dir}')
-    return tsv_path, meta_path, out_dir
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Data loading
-# ══════════════════════════════════════════════════════════════════════════════
-
-def load_tsv(path: str) -> pd.DataFrame:
-    return pd.read_csv(path, sep='\t', index_col=0)
-
-
-def load_meta(path: str, sample_col: str, group_col: str
-              ) -> tuple[pd.DataFrame, str, str]:
-    sep  = '\t' if path.endswith('.tsv') else ','
-    meta = pd.read_csv(path, sep=sep)
-    meta.columns = meta.columns.str.strip()
-    sc, gc = sample_col.strip(), group_col.strip()
-    stripped = {c.strip(): c for c in meta.columns}
-    if sc not in meta.columns and sc in stripped:
-        meta = meta.rename(columns={stripped[sc]: sc})
-    if gc not in meta.columns and gc in stripped:
-        meta = meta.rename(columns={stripped[gc]: gc})
-    meta[sc] = meta[sc].astype(str).str.strip()
-    meta[gc] = meta[gc].astype(str).str.strip()
-    return meta[[sc, gc]].dropna(), sc, gc
-
-
-def normalize_pct(df: pd.DataFrame) -> pd.DataFrame:
-    col_sum = df.sum(axis=0).replace(0, np.nan)
-    return df.div(col_sum, axis=1).multiply(100).fillna(0)
-
-
-def count_species(df_pct: pd.DataFrame,
-                  abundance_cutoff: float,
-                  prevalence_cutoff: float) -> int:
-    present    = df_pct > abundance_cutoff
-    prevalence = present.sum(axis=1) / present.shape[1] * 100
-    return int((prevalence > prevalence_cutoff).sum())
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Pairing summary
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _print_pairing_summary(meta: pd.DataFrame, sample_col: str,
-                            group_col: str, tsv_cols: pd.Index) -> None:
-    tsv_set = set(tsv_cols)
-    print()
-    print('  ┌──────────────────────────────────────────────┐')
-    print('  │         Sample–TSV pairing summary           │')
-    print('  ├──────────────┬──────────┬────────────────────┤')
-    print('  │ Group        │ In meta  │ Matched in TSV     │')
-    print('  ├──────────────┼──────────┼────────────────────┤')
-    for group in sorted(meta[group_col].unique()):
-        rows    = meta[meta[group_col] == group]
-        n_meta  = len(rows)
-        matched = rows[sample_col].isin(tsv_set).sum()
-        print(f'  │ {group:<12s} │ {n_meta:>8d} │ {matched:>18d} │')
-    total   = len(meta)
-    matched = meta[sample_col].isin(tsv_set).sum()
-    print('  ├──────────────┼──────────┼────────────────────┤')
-    print(f'  │ {"TOTAL":<12s} │ {total:>8d} │ {matched:>18d} │')
-    print('  └──────────────┴──────────┴────────────────────┘')
-    unmatched = set(meta[sample_col]) - tsv_set
-    if unmatched:
-        print(f'\n  [warn] {len(unmatched)} samples in metadata NOT found in TSV:')
-        for s in sorted(unmatched)[:8]:
-            print(f'         • {s}')
-        if len(unmatched) > 8:
-            print(f'         … and {len(unmatched)-8} more')
-    print()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Step 1 – Full heatmap
-# ══════════════════════════════════════════════════════════════════════════════
-
-def run_full_heatmap(df_pct: pd.DataFrame, out_dir: str) -> None:
-    print('[Step 1] Building full-dataset heatmap …')
-    n_taxa, n_samples = df_pct.shape
-
-    row_labels = [f'> {a}%' for a in HEATMAP_ABUNDANCE_CUTOFFS]
-    col_labels  = [f'> {p}%' for p in HEATMAP_PREVALENCE_CUTOFFS]
-    mat = pd.DataFrame(index=row_labels, columns=col_labels, dtype=float)
-
-    for a in HEATMAP_ABUNDANCE_CUTOFFS:
-        for p in HEATMAP_PREVALENCE_CUTOFFS:
-            mat.at[f'> {a}%', f'> {p}%'] = count_species(df_pct, a, p)
-
-    csv_path = os.path.join(out_dir, 'step1_all_heatmap.csv')
-    png_path = os.path.join(out_dir, 'step1_all_heatmap.png')
-    mat.to_csv(csv_path, encoding='utf-8-sig')
-    _plot_heatmap(mat,
-                  title=f'All samples (n={n_samples}) – '
-                        f'species count across cutoffs',
-                  png_path=png_path)
-    print(f'  Taxa: {n_taxa}  |  Samples: {n_samples}')
-    print(f'  PNG → {png_path}')
-
-
-def _plot_heatmap(mat: pd.DataFrame, title: str, png_path: str) -> None:
-    data  = mat.astype(float).values
-    ncols, nrows = len(mat.columns), len(mat.index)
-
-    fig, ax = plt.subplots(figsize=(max(12, ncols * 0.6), max(3, nrows * 0.9)))
-
-    # YlOrRd: low values = light yellow, high values = dark red (matches reference)
-    im   = ax.imshow(data, aspect='auto', cmap='YlOrRd')
-    cbar = fig.colorbar(im, ax=ax, shrink=0.8)
-    cbar.set_label('Taxon count', fontsize=10)
-
-    ax.set_xticks(range(ncols))
-    ax.set_yticks(range(nrows))
-    ax.set_xticklabels(mat.columns, rotation=45, ha='right', fontsize=8)
-    ax.set_yticklabels(mat.index, fontsize=9)
-    ax.set_xlabel('Prevalence cutoff (%)', fontsize=10)
-    ax.set_ylabel('Abundance cutoff (per-sample %)', fontsize=10)
-    ax.set_title(title, fontsize=11, pad=10)
-
-    # Text colour: white on dark cells, black on light cells
-    for i in range(nrows):
-        for j in range(ncols):
-            v     = int(data[i, j])
-            norm_v = im.norm(data[i, j])
-            # YlOrRd: high norm = dark red → white text; low norm = light → black text
-            color = 'white' if norm_v > 0.65 else 'black'
-            ax.text(j, i, str(v), ha='center', va='center',
-                    fontsize=8, color=color, fontweight='bold')
-
-    plt.tight_layout()
-    plt.savefig(png_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Step 1b – Full-dataset elbow plot  (all samples, one line per abundance)
-# ══════════════════════════════════════════════════════════════════════════════
-
-# Colours for each abundance level line (matches reference image palette)
-_ABUND_LINE_COLORS = {
-    0:    '#1f77b4',   # blue
-    0.01: '#ff7f0e',   # orange
-    0.1:  '#2ca02c',   # teal-green
-    1:    '#d62728',   # red
-    5:    '#17becf',   # light blue / cyan
-    10:   '#e377c2',   # pink
-}
-_ABUND_SHADE_COLORS = [
-    '#aec7e8', '#c7e9c0', '#f5c6aa', '#fdd0a2', '#fde0ef'
-]
-
-ANNOTATE_PREV = 5   # prevalence % at which to place the highlight dot + label
-
-
-def run_full_elbow(df_pct: pd.DataFrame, out_dir: str) -> None:
-    """
-    Overview elbow plot for ALL samples combined.
-    X = prevalence cutoff (%)
-    Y = taxon count
-    One line per abundance cutoff (same style as reference image).
-    Shaded bands between adjacent lines + annotation dot at ANNOTATE_PREV.
-    """
-    print(f'\n[Step 1b] Full-dataset overview elbow plot …')
-
-    n_samples = df_pct.shape[1]
-
-    # Build count matrix: abundance → list of counts per prevalence cutoff
-    line_data = {}
-    for a in HEATMAP_ABUNDANCE_CUTOFFS:
-        line_data[a] = [count_species(df_pct, a, p)
-                        for p in ELBOW_PREVALENCE_CUTOFFS]
-
-    # Find annotation index
-    try:
-        annot_idx = ELBOW_PREVALENCE_CUTOFFS.index(ANNOTATE_PREV)
-    except ValueError:
-        annot_idx = 1
-
-    fig, ax = plt.subplots(figsize=(14, 7))
-
-    levels = HEATMAP_ABUNDANCE_CUTOFFS
-
-    # ── Shaded bands between adjacent lines (bottom-most first) ──────────────
-    for i in range(len(levels) - 1):
-        a_top = levels[i]
-        a_bot = levels[i + 1]
-        color = _ABUND_SHADE_COLORS[i % len(_ABUND_SHADE_COLORS)]
-        ax.fill_between(ELBOW_PREVALENCE_CUTOFFS,
-                        line_data[a_top], line_data[a_bot],
-                        alpha=0.18, color=color)
-
-    # ── Lines + annotation dots ───────────────────────────────────────────────
-    for a in levels:
-        counts = line_data[a]
-        color  = _ABUND_LINE_COLORS.get(a, 'gray')
-        label  = f'abund > {a}%'
-
-        ax.plot(ELBOW_PREVALENCE_CUTOFFS, counts,
-                marker='o', markersize=4, linewidth=1.8,
-                color=color, label=label)
-
-        # Highlight dot + label at ANNOTATE_PREV
-        xv = ELBOW_PREVALENCE_CUTOFFS[annot_idx]
-        yv = counts[annot_idx]
-        ax.plot(xv, yv, 'o', color=color, markersize=9, zorder=5)
-        ax.annotate(
-            f'prev={ANNOTATE_PREV}% n={yv}',
-            xy=(xv, yv),
-            xytext=(xv + 1.5, yv + max(line_data[levels[0]]) * 0.02),
-            fontsize=8, color=color, fontweight='bold',
-        )
-
-    # ── Formatting ────────────────────────────────────────────────────────────
-    ax.set_xticks(ELBOW_PREVALENCE_CUTOFFS)
-    ax.set_xticklabels([f'> {p}%' for p in ELBOW_PREVALENCE_CUTOFFS],
-                       rotation=45, ha='right', fontsize=8)
-    ax.set_xlabel('Prevalence cutoff (%)', fontsize=12)
-    ax.set_ylabel('Taxon count', fontsize=12)
-    ax.set_title(
-        f'Elbow plot – Taxon count vs prevalence cutoff\n'
-        f'All samples (n={n_samples})',
-        fontsize=13)
-    ax.legend(loc='upper right', fontsize=9, framealpha=0.8)
-    ax.grid(True, alpha=0.25, linestyle='--')
-    ax.set_xlim(-1, max(ELBOW_PREVALENCE_CUTOFFS) + 1)
-    ax.set_ylim(bottom=0)
-
-    plt.tight_layout()
-    png_path = os.path.join(out_dir, 'step1b_full_elbow.png')
-    plt.savefig(png_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    print(f'  PNG → {png_path}')
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Step 2 – Per-group elbow plot
-# ══════════════════════════════════════════════════════════════════════════════
-
-def run_group_elbow(df_pct: pd.DataFrame, meta: pd.DataFrame,
-                    sample_col: str, group_col: str, out_dir: str) -> None:
-    print(f'\n[Step 2] Per-group elbow plot (abundance > {FIXED_ABUNDANCE}%) …')
-
-    groups = sorted(meta[group_col].unique())
-    colors = cm.tab10(np.linspace(0, 1, max(len(groups), 1)))
-
-    fig, ax = plt.subplots(figsize=(12, 6))
-    records = []
-
-    for group, color in zip(groups, colors):
-        samples = [s for s in meta.loc[meta[group_col] == group, sample_col]
-                   if s in df_pct.columns]
-        if not samples:
-            print(f'  [warn] No matched samples for: {group}')
-            continue
-        sub    = df_pct[samples]
-        n      = len(samples)
-        counts = [count_species(sub, FIXED_ABUNDANCE, p)
-                  for p in ELBOW_PREVALENCE_CUTOFFS]
-        ax.plot(ELBOW_PREVALENCE_CUTOFFS, counts,
-                marker='o', markersize=4, linewidth=2,
-                label=f'{group}  (n={n})', color=color)
-        for p, c in zip(ELBOW_PREVALENCE_CUTOFFS, counts):
-            records.append({'Group': group, 'n_samples': n,
-                            'Prevalence_cutoff_%': p, 'Species_count': c})
-
-    ax.set_xticks(ELBOW_PREVALENCE_CUTOFFS)
-    ax.set_xticklabels([f'{p}%' for p in ELBOW_PREVALENCE_CUTOFFS],
-                       rotation=45, ha='right', fontsize=9)
-    ax.set_xlabel('Prevalence cutoff (%)', fontsize=12)
-    ax.set_ylabel('Taxon count', fontsize=12)
-    ax.set_title(f'Elbow plot – taxon count vs prevalence cutoff\n'
-                 f'(abundance > {FIXED_ABUNDANCE}%)', fontsize=13)
-    ax.legend(title='Group', bbox_to_anchor=(1.01, 1),
-              loc='upper left', fontsize=9)
-    ax.grid(True, alpha=0.3)
-    ax.set_xlim(-2, max(ELBOW_PREVALENCE_CUTOFFS) + 2)
-    plt.tight_layout()
-
-    png_path = os.path.join(out_dir, 'step2_group_elbow.png')
-    csv_path = os.path.join(out_dir, 'step2_group_elbow.csv')
-    plt.savefig(png_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    pd.DataFrame(records).to_csv(csv_path, index=False, encoding='utf-8-sig')
-    print(f'  Groups: {groups}')
-    print(f'  PNG → {png_path}')
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Step 3 – Per-group species CSV
-# ══════════════════════════════════════════════════════════════════════════════
-
-def run_group_species_csv(df_pct: pd.DataFrame, meta: pd.DataFrame,
-                           sample_col: str, group_col: str,
-                           out_dir: str) -> None:
-    print(f'\n[Step 3] Per-group species lists '
-          f'(abundance > {FIXED_ABUNDANCE}%, all prevalence levels) …')
-
-    core_dir = os.path.join(out_dir, 'group_species_lists')
-    os.makedirs(core_dir, exist_ok=True)
-
-    for group in sorted(meta[group_col].unique()):
-        samples = [s for s in meta.loc[meta[group_col] == group, sample_col]
-                   if s in df_pct.columns]
-        if not samples:
-            continue
-        sub = df_pct[samples]
-        n   = len(samples)
-        present    = sub > FIXED_ABUNDANCE
-        prevalence = present.sum(axis=1) / n * 100
-        detected   = prevalence > 0
-
-        result = pd.DataFrame({
-            'Taxon':               sub.index[detected],
-            'n_samples_present':   present.loc[detected].sum(axis=1).values,
-            'n_samples_total':     n,
-            'Prevalence_%':        prevalence[detected].round(2).values,
-            'Mean_RelAbun_%':      sub.loc[detected].mean(axis=1).round(4).values,
-            'Median_RelAbun_%':    sub.loc[detected].median(axis=1).round(4).values,
-            'Max_RelAbun_%':       sub.loc[detected].max(axis=1).round(4).values,
-        }).sort_values('Prevalence_%', ascending=False).reset_index(drop=True)
-
-        safe  = group.replace('/', '-').replace(' ', '_')
-        path  = os.path.join(core_dir,
-                             f'{safe}_abun{FIXED_ABUNDANCE}_all_prev.csv')
-        result.to_csv(path, index=False, encoding='utf-8-sig')
-        print(f'  [{group:<12s}]  n={n:3d}  →  {len(result):3d} species  {path}')
-
-    print(f'  Lists saved → {core_dir}')
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Step 4 – Pairwise Statistical Comparisons
-# ══════════════════════════════════════════════════════════════════════════════
-
-def run_statistical_comparisons(df_pct: pd.DataFrame, meta: pd.DataFrame,
-                                sample_col: str, group_col: str, out_dir: str) -> None:
-    print(f'\n[Step 4] Pairwise statistical comparisons (Prevalence & Abundance) …')
-
-    stats_dir = os.path.join(out_dir, 'statistical_comparisons')
-    os.makedirs(stats_dir, exist_ok=True)
-
-    groups = sorted(meta[group_col].unique())
-    if len(groups) < 2:
-        print("  [warn] Not enough groups to perform statistical comparisons.")
-        return
-
-    # Generate all pairwise combinations
-    pairs = list(itertools.combinations(groups, 2))
-
-    for g1, g2 in pairs:
-        print(f'  Comparing [{g1}] vs [{g2}] ...')
-
-        # Get samples for each group
-        samples1 = [s for s in meta.loc[meta[group_col] == g1, sample_col] if s in df_pct.columns]
-        samples2 = [s for s in meta.loc[meta[group_col] == g2, sample_col] if s in df_pct.columns]
-
-        n1, n2 = len(samples1), len(samples2)
-        if n1 == 0 or n2 == 0:
-            print(f'    [warn] Missing samples for one of the groups. Skipping.')
-            continue
-
-        sub1 = df_pct[samples1]
-        sub2 = df_pct[samples2]
-
-        # Calculate presence status for Fisher's exact test (using FIXED_ABUNDANCE, e.g. 0.01%)
-        present1_df = sub1 > FIXED_ABUNDANCE
-        present2_df = sub2 > FIXED_ABUNDANCE
-
-        records = []
-        for taxon in df_pct.index:
-            # Species profile
-            abun1 = sub1.loc[taxon].values
-            abun2 = sub2.loc[taxon].values
-
-            # Presence based on the predefined threshold
-            is_present1 = present1_df.loc[taxon].values
-            is_present2 = present2_df.loc[taxon].values
-
-            p1_count = is_present1.sum()
-            p2_count = is_present2.sum()
-
-            # Skip the test for this taxon if it's completely absent in BOTH groups
-            if p1_count == 0 and p2_count == 0:
-                continue
-
-            prev1 = (p1_count / n1) * 100
-            prev2 = (p2_count / n2) * 100
-
-            mean1, mean2 = np.mean(abun1), np.mean(abun2)
-            med1, med2 = np.median(abun1), np.median(abun2)
-
-            # 1. Prevalence test (Fisher's exact test)
-            A, B = p1_count, p2_count
-            C, D = n1 - A, n2 - B
-            table = [[A, B], [C, D]]
-            _, fish_p = fisher_exact(table)
-
-            # 2. Abundance test (Mann-Whitney U test)
-            try:
-                # If both array distributions are perfectly identical (e.g. all 0, all exactly same number)
-                if np.array_equal(abun1, abun2):
-                    mwu_p = 1.0
-                else:
-                    _, mwu_p = mannwhitneyu(abun1, abun2, alternative='two-sided')
-            except ValueError:
-                mwu_p = 1.0
-
-            # Log2FoldChange calculation (Adding a pseudo-count of 1e-5 to avoid log(0))
-            log2fc = np.log2((mean1 + 1e-5) / (mean2 + 1e-5))
-
-            records.append({
-                'Taxon': taxon,
-                f'Prevalence_{g1}_%': round(prev1, 2),
-                f'Prevalence_{g2}_%': round(prev2, 2),
-                'Prevalence_Diff_%': round(prev1 - prev2, 2),
-                f'Mean_Abun_{g1}_%': round(mean1, 4),
-                f'Mean_Abun_{g2}_%': round(mean2, 4),
-                'Log2FC_Mean_Abun': round(log2fc, 4),
-                f'Median_Abun_{g1}_%': round(med1, 4),
-                f'Median_Abun_{g2}_%': round(med2, 4),
-                'Fisher_pvalue': fish_p,
-                'MWU_pvalue': mwu_p
-            })
-
-        if not records:
-            continue
-
-        res_df = pd.DataFrame(records)
-
-        # FDR correction based on Benjamini-Hochberg for the extracted p-values
-        fish_pvals = res_df['Fisher_pvalue'].fillna(1.0).values
-        mwu_pvals = res_df['MWU_pvalue'].fillna(1.0).values
-
+import subprocess
+import importlib
+
+def _auto_install():
+    required = {
+        "seaborn": "seaborn",
+        "plotly": "plotly",
+        "skbio": "scikit-bio",
+        "openpyxl": "openpyxl"
+    }
+    missing = []
+    for module_name, pip_name in required.items():
         try:
-            _, fish_fdr, _, _ = multipletests(fish_pvals, method='fdr_bh')
-            _, mwu_fdr, _, _ = multipletests(mwu_pvals, method='fdr_bh')
-        except Exception:
-            fish_fdr, mwu_fdr = fish_pvals, mwu_pvals
+            importlib.import_module(module_name)
+        except ImportError:
+            missing.append(pip_name)
+    
+    if missing:
+        print("\n" + "="*50)
+        print(f"⚠️ 嘿！偵測到您的環境缺少必要套件: {', '.join(missing)}")
+        print("🔄 系統現在正在為您「全自動下載與安裝」，請稍候...(這可能需要一到兩分鐘)")
+        print("="*50 + "\n")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", *missing])
+            print("\n✅ 安裝大功告成！請馬上在終端機【再按一次「上」方向鍵】，重新執行 `streamlit run Beta.py` 來啟動網站！")
+            sys.exit(0)
+        except Exception as e:
+            print(f"\n❌ 自動安裝失敗，請您嘗試手動在終端機貼上執行: \n{sys.executable} -m pip install {' '.join(missing)}")
+            sys.exit(1)
 
-        res_df['Fisher_FDR_qvalue'] = fish_fdr
-        res_df['MWU_FDR_qvalue'] = mwu_fdr
+_auto_install()
 
-        # Sort the rows by Abundance MWU p-value descending by default
-        res_df = res_df.sort_values(['MWU_pvalue', 'Fisher_pvalue']).reset_index(drop=True)
+import streamlit as st
+from streamlit.runtime.uploaded_file_manager import UploadedFile
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+import numpy as np
+import random
+from scipy.spatial.distance import pdist, squareform
+from skbio.stats.ordination import pcoa
+from skbio.stats.distance import DistanceMatrix, anosim, mantel
+import io
 
-        safe1 = g1.replace('/', '-').replace(' ', '_')
-        safe2 = g2.replace('/', '-').replace(' ', '_')
-        path = os.path.join(stats_dir, f'{safe1}_vs_{safe2}_stats.csv')
-        res_df.to_csv(path, index=False, encoding='utf-8-sig')
-        print(f'    → Saved {len(res_df)} taxon comparisons to {path}')
+# ✅ NEW: 讓 colorbar 跟主圖同高、完全對齊
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
+st.set_page_config(page_title='PCoA GUI', layout='wide')
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Main
-# ══════════════════════════════════════════════════════════════════════════════
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Core microbiota analysis  '
-                    '(run without arguments for interactive GUI)',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__)
+    st.title('🧬 PCoA GUI ')
 
-    parser.add_argument('--data-dir',
-        help='Experiment folder – auto-discovers .tsv and .csv inside')
-    parser.add_argument('--tsv',
-        help='Taxon table (TSV, rows=taxa, columns=samples)')
-    parser.add_argument('--meta',
-        help='Sample metadata (CSV or TSV)')
-    parser.add_argument('--meta-sample-col', default='Sample',
-        help='Sample-ID column in metadata  (default: "Sample")')
-    parser.add_argument('--meta-group-col', default='Group',
-        help='Group column in metadata  (default: "Group")')
-    parser.add_argument('--out', default=None,
-        help='Output directory  (default: <data-dir>/core_microbiota_output/)')
+    distance_file: UploadedFile = st.file_uploader('📂 上傳距離矩陣 (.tsv / .csv)', type=['tsv', 'csv'])
+    metadata_file: UploadedFile = st.file_uploader('📂 上傳 metadata (.xlsx / .csv)', type=['xlsx', 'csv'])
 
-    args = parser.parse_args()
-    no_args = not args.data_dir and not args.tsv and not args.meta
+    if distance_file is None or metadata_file is None:
+        st.info('📥 請依序上傳距離矩陣與 metadata 檔案')
+        return
 
-    # ── Resolve paths ─────────────────────────────────────────────────────────
-    if no_args:
-        print('No arguments → opening GUI file picker …')
-        tsv_path, meta_path, out_dir = _gui_pick()
-        if args.out:
-            out_dir = args.out
+    Pipeline().main(distance_file, metadata_file)
 
-    elif args.data_dir:
-        tsv_path, meta_path = _auto_discover(args.data_dir)
-        out_dir = args.out or os.path.join(
-            args.data_dir, 'core_microbiota_output')
 
-    elif args.tsv and args.meta:
-        tsv_path  = args.tsv
-        meta_path = args.meta
-        out_dir   = args.out or 'core_microbiota_output'
+class Pipeline:
+    def main(self, distance_file: UploadedFile, metadata_file: UploadedFile):
+        # Read and process distance matrix
+        df_dist = pd.read_csv(distance_file, sep=None, engine='python', index_col=0)
+        df_dist.index = df_dist.index.astype(str).str.strip()
+        df_dist.columns = df_dist.columns.astype(str).str.strip()
+        df_dist = df_dist.loc[df_dist.index, df_dist.columns]
 
-    else:
-        parser.error(
-            'Run without arguments for GUI mode, or provide:\n'
-            '  --data-dir <folder>\n'
-            '  --tsv <file> --meta <file>')
+        # Read and process metadata
+        if metadata_file.name.endswith('.xlsx'):
+            df_meta = pd.read_excel(metadata_file, engine='openpyxl', dtype=str)
+        else:
+            df_meta = pd.read_csv(metadata_file, dtype=str)
+        df_meta.columns.values[0] = 'SampleID'
+        df_meta['SampleID'] = df_meta['SampleID'].astype(str).str.strip()
+        df_meta = df_meta.set_index('SampleID')
 
-    os.makedirs(out_dir, exist_ok=True)
+        # Intersect distance matrix and metadata with common IDs
+        dist_ids_set = set(df_dist.index)
+        meta_ids_set = set(df_meta.index)
+        common_ids = [i for i in df_dist.index if i in df_meta.index]
 
-    # ── Load ──────────────────────────────────────────────────────────────────
-    print('=' * 62)
-    print('Loading data …')
-    df_raw = load_tsv(tsv_path)
-    meta, sample_col, group_col = load_meta(
-        meta_path, args.meta_sample_col, args.meta_group_col)
+        # ✅ NEW: 聰明的錯誤提示系統，直接在畫面上印出誰對不起來
+        in_dist_not_meta = dist_ids_set - meta_ids_set
+        in_meta_not_dist = meta_ids_set - dist_ids_set
+        
+        if in_dist_not_meta or in_meta_not_dist:
+            with st.expander("⚠️ 警告：部分樣本因為兩份檔案的 ID 對不上，已被自動剔除 (點擊展開看是誰)", expanded=True):
+                st.write(f"✅ 成功完美配對出的樣本數: **{len(common_ids)}** 個")
+                if in_dist_not_meta:
+                    st.error(f"📍 以下 {len(in_dist_not_meta)} 個樣本出現在【距離矩陣】，但【Metadata】裡找不到 (請檢查大小寫與空白)：\n\n" + ", ".join(in_dist_not_meta))
+                if in_meta_not_dist:
+                    st.warning(f"📍 以下 {len(in_meta_not_dist)} 個樣本出現在【Metadata】，但【距離矩陣】裡找不到：\n\n" + ", ".join(in_meta_not_dist))
 
-    print(f'  Taxa          : {len(df_raw)}')
-    print(f'  Samples (TSV) : {len(df_raw.columns)}')
-    print(f'  Samples (meta): {len(meta)}')
-    print(f'  Groups        : {sorted(meta[group_col].unique())}')
-    _print_pairing_summary(meta, sample_col, group_col, df_raw.columns)
+        df_meta = df_meta.loc[common_ids].reset_index()
+        df_dist = df_dist.loc[common_ids, common_ids]
 
-    df_pct = normalize_pct(df_raw)
+        # Run PCoA
+        full_distance_matrix = DistanceMatrix(df_dist.values, ids=common_ids)
+        pcoa_results = pcoa(full_distance_matrix)
+        coords = pcoa_results.samples.reset_index().rename(columns={'index': 'SampleID'})
+        df_merged = pd.merge(coords, df_meta, on='SampleID', how='inner')
 
-    # ── Run ───────────────────────────────────────────────────────────────────
-    print('=' * 62)
-    run_full_heatmap(df_pct, out_dir)
-    print('=' * 62)
-    run_full_elbow(df_pct, out_dir)
-    print('=' * 62)
-    run_group_elbow(df_pct, meta, sample_col, group_col, out_dir)
-    print('=' * 62)
-    run_group_species_csv(df_pct, meta, sample_col, group_col, out_dir)
-    print('=' * 62)
-    run_statistical_comparisons(df_pct, meta, sample_col, group_col, out_dir)
-    print('=' * 62)
-    print('Done!  Outputs saved to:', os.path.abspath(out_dir))
-    print('=' * 62)
+        # Show PC columns
+        pc_cols = [col for col in df_merged.columns if col.startswith('PC')]
+        x_axis = st.selectbox('選擇 X 軸', pc_cols, index=0)
+        y_axis = st.selectbox('選擇 Y 軸', pc_cols, index=1)
+        reverse_x = st.checkbox('反轉 X 軸', value=False)
+        reverse_y = st.checkbox('反轉 Y 軸', value=False)
+
+        # Show metadata columns
+        meta_cols = [col for col in df_meta.columns if col != 'SampleID']
+        st.subheader('🧩 上色變數')
+        color_var = st.selectbox('選擇上色變數', meta_cols)
+
+        mode = st.radio('📌 選擇變數型態', ['自動偵測', '類別型', '連續型'], index=0)
+
+        # Filter out empty or whitespace-only values
+        df_merged = df_merged[df_merged[color_var].notna() & (df_merged[color_var].astype(str).str.strip() != '')]
+        if df_merged.empty:
+            st.error('🚩 上色變數無有效資料')
+            st.stop()
+
+        if mode == '類別型' or (mode == '自動偵測' and df_merged[color_var].nunique() <= 10):
+            df_merged[color_var] = df_merged[color_var].astype(str)
+            palette = st.selectbox('🎨 色盤（類別型）', ['Set1', 'Set2', 'tab10', 'Dark2'])
+            plot_kind = 'categorical'
+            color_args = {}
+        else:
+            df_merged[color_var] = pd.to_numeric(df_merged[color_var], errors='coerce')
+            palette = st.selectbox('🎨 色盤（連續型）', ['viridis', 'plasma', 'cividis'])
+            plot_kind = 'continuous'
+            color_args = {'color_continuous_scale': palette}
+
+        view_mode = st.radio('📐 顯示模式', ['2D', '3D'], index=0)
+        chart_title = f'PCoA colored by {color_var}'
+
+        # ✅ 2D 顯示範圍與客製化設定
+        st.subheader('📏 2D 圖形顯示與進階美化 (期刊格式)')
+        lock_aspect = st.checkbox('🔒 啟用「頂級發表格式」排版 (主圖不受圖例擠壓)', value=True)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            fig_width = st.number_input('圖形基礎寬度', min_value=4.0, max_value=30.0, value=6.0, step=0.5)
+        with col2:
+            fig_height = st.number_input('圖形基礎高度', min_value=4.0, max_value=30.0, value=6.0, step=0.5)
+        with col3:
+            marker_size = st.number_input('點的尺寸 (Marker Size)', min_value=10, max_value=600, value=100, step=10)
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            edge_color = st.selectbox('點的外框顏色', ['white', 'black', 'none'], index=0)
+        with c2:
+            point_alpha = st.number_input('點的透明度 (防止重疊)', min_value=0.1, max_value=1.0, value=0.8, step=0.1)
+        with c3:
+            show_title = st.checkbox('顯示上方主標題', value=False)
+        with c4:
+            show_legend_box = st.checkbox('顯示圖例周圍方框', value=False)
+
+        force_equal = st.checkbox('📐 鎖定 PCoA 真實等比例 (若打勾：可能導致圖形變長方形；若不勾：圖形會完美填滿正方形)', value=False)
+        axis_mode = st.radio('座標範圍模式', ['自動（每次資料不同）', '固定等比例（推薦）', '手動固定'], index=0)
+
+        x_vals_tmp = (df_merged[x_axis] * (-1 if reverse_x else 1)).astype(float)
+        y_vals_tmp = (df_merged[y_axis] * (-1 if reverse_y else 1)).astype(float)
+
+        if axis_mode == '固定等比例（推薦）':
+            pad_ratio = st.slider('邊界留白比例', 0.0, 0.5, 0.10, 0.01)
+            limit = float(np.max(np.abs(np.r_[x_vals_tmp.values, y_vals_tmp.values])) * (1.0 + pad_ratio))
+            xlim = (-limit, limit)
+            ylim = (-limit, limit)
+        elif axis_mode == '手動固定':
+            x_min = st.number_input('X 最小值', value=float(np.min(x_vals_tmp.values)))
+            x_max = st.number_input('X 最大值', value=float(np.max(x_vals_tmp.values)))
+            y_min = st.number_input('Y 最小值', value=float(np.min(y_vals_tmp.values)))
+            y_max = st.number_input('Y 最大值', value=float(np.max(y_vals_tmp.values)))
+            xlim = (x_min, x_max)
+            ylim = (y_min, y_max)
+        else:
+            xlim = None
+            ylim = None
+
+        if view_mode == '2D':
+            if lock_aspect:
+                fig = plt.figure(figsize=(fig_width, fig_height))
+                # 讓方塊以高度為主，佔據畫面約 75% 高度
+                square_size = fig_height * 0.75  
+                ax_w = square_size / fig_width
+                ax_h = square_size / fig_height
+                left_margin = 0.15  # 固定左側留白給 Y 軸名稱
+                bottom_margin = 0.15 # 固定底側留白給 X 軸名稱
+                ax = fig.add_axes([left_margin, bottom_margin, ax_w, ax_h])
+            else:
+                fig, ax = plt.subplots(figsize=(fig_width, fig_height), constrained_layout=True)
+
+            x_vals = x_vals_tmp
+            y_vals = y_vals_tmp
+
+            # 全局設定使用無襯線字體，看起來更像專業期刊
+            plt.rcParams['font.family'] = 'sans-serif'
+            plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'DejaVu Sans']
+
+            if plot_kind == 'categorical':
+                sns.scatterplot(
+                    x=x_vals,
+                    y=y_vals,
+                    hue=df_merged[color_var],
+                    palette=palette,
+                    s=marker_size,
+                    edgecolor=edge_color if edge_color != 'none' else None,
+                    linewidth=1.2 if edge_color != 'none' else 0,
+                    alpha=point_alpha,
+                    ax=ax,
+                    zorder=3
+                )
+                ax.legend(
+                    # 不強制顯示 title 讓畫面更乾淨
+                    bbox_to_anchor=(1.05, 1.0),
+                    loc='upper left',
+                    borderaxespad=0.0,
+                    frameon=show_legend_box,
+                    fontsize=16,
+                    markerscale=1.0 # 因為點的大小設定已經在上面了
+                )
+            else:
+                sc = ax.scatter(
+                    x_vals,
+                    y_vals,
+                    c=df_merged[color_var],
+                    cmap=palette,
+                    s=marker_size,
+                    edgecolors=edge_color if edge_color != 'none' else 'none',
+                    linewidths=1.2 if edge_color != 'none' else 0,
+                    alpha=point_alpha,
+                    zorder=3
+                )
+
+                # ✅ 連續型 Colorbar 字體放大與防擠壓處理
+                if lock_aspect:
+                    # 絕對坐標系添加 Colorbar，百分之百不干擾主圖方框的長寬比例
+                    cax_left = left_margin + ax_w + 0.03
+                    cax = fig.add_axes([cax_left, bottom_margin, 0.03, ax_h])
+                    cbar = fig.colorbar(sc, cax=cax)
+                else:
+                    divider = make_axes_locatable(ax)
+                    cax = divider.append_axes("right", size="5%", pad=0.15)  
+                    cbar = fig.colorbar(sc, cax=cax)
+                    
+                cbar.set_label(color_var, fontsize=22)
+                cbar.ax.tick_params(labelsize=18)
+                cbar.outline.set_linewidth(2.5)
+
+            var_x = float(pcoa_results.proportion_explained[x_axis] * 100)
+            var_y = float(pcoa_results.proportion_explained[y_axis] * 100)
+            ax.set_xlabel(f'{x_axis} ({var_x:.2f}%)', fontsize=24)
+            ax.set_ylabel(f'{y_axis} ({var_y:.2f}%)', fontsize=24)
+            
+            if show_title:
+                ax.set_title(chart_title, fontsize=24, pad=15)
+                
+            ax.tick_params(axis='both', which='major', labelsize=18, length=8, width=2.5, direction='out')
+
+            if xlim is not None and ylim is not None:
+                ax.set_xlim(*xlim)
+                ax.set_ylim(*ylim)
+
+            if force_equal:
+                ax.set_aspect('equal', adjustable='box')
+            else:
+                ax.set_aspect('auto')
+
+            for spine in ax.spines.values():
+                spine.set_visible(True)
+                spine.set_linewidth(2.5) # 讓邊界稍微加粗更有質感
+
+            st.pyplot(fig)
+
+            buf = io.BytesIO()
+            # 由於我們已經在上面透過鎖定排版保護好內部比例，現在可以安全地開啟 tight 切除討厭的大白邊！
+            fig.savefig(buf, format='png', dpi=1200, bbox_inches='tight', transparent=False)
+            buf.seek(0)
+            st.download_button(
+                '📎 下載 2D 圖檔 (PNG, 1200 dpi)',
+                data=buf,
+                file_name=f'{color_var}_PCoA.png',
+                mime='image/png'
+            )
+            plt.close(fig)
+
+        elif view_mode == '3D':
+            has_pc1_to_3 = True
+            for pc in ['PC1', 'PC2', 'PC3']:
+                if pc not in df_merged.columns:
+                    has_pc1_to_3 = False
+                    break
+
+            if has_pc1_to_3:
+                fig3d = px.scatter_3d(
+                    df_merged, x='PC1', y='PC2', z='PC3',
+                    color=color_var,
+                    title=chart_title,
+                    labels={'PC1': 'PC1', 'PC2': 'PC2', 'PC3': 'PC3'},
+                    **color_args
+                )
+                st.plotly_chart(fig3d, use_container_width=True)
+
+                for fmt in ['png', 'pdf', 'svg']:
+                    image_bytes = fig3d.to_image(format=fmt, scale=5)
+                    st.download_button(
+                        f'📎 下載 3D 圖檔 ({fmt.upper()})',
+                        data=image_bytes,
+                        file_name=f"{color_var}_3D_PCoA.{fmt}",
+                        mime='image/svg+xml' if fmt == 'svg' else f'image/{fmt}',
+                    )
+            else:
+                st.info('⚠️ 無法進行 3D 繪圖（缺少 PC1~PC3）')
+
+        perm_count = st.number_input('Permutation 次數', min_value=10, step=100, value=999)
+        random_seed = st.number_input('隨機種子', min_value=1, value=42, step=1)
+        st.caption('✅ 類別變因 → ANOSIM；連續變因 → Mantel test')
+
+        if x_axis not in df_merged.columns:
+            st.warning(f"⚠️ 無此欄位: {x_axis} 在資料中找不到，請確認欄位名稱。")
+        elif y_axis not in df_merged.columns:
+            st.warning(f"⚠️ 無此欄位: {y_axis} 在資料中找不到，請確認欄位名稱。")
+        elif color_var not in df_merged.columns:
+            st.warning(f"⚠️ 無此欄位: {color_var} 在資料中找不到，請確認欄位名稱。")
+        else:
+            selected_coords = df_merged[['SampleID', x_axis, y_axis]].copy()
+            distance_matrix = full_distance_matrix.filter(df_merged['SampleID'].tolist())
+
+            random.seed(random_seed)
+            np.random.seed(random_seed)
+
+            if plot_kind == 'categorical':
+                group_series = df_merged.set_index('SampleID').loc[selected_coords['SampleID'], color_var]
+                result = anosim(distance_matrix, group_series, permutations=perm_count)
+                st.success(f'ANOSIM R = {result["test statistic"]:.4f}, p = {result["p-value"]:.4g}')
+            else:
+                meta_dist = squareform(pdist(df_merged[[color_var]].values, metric='euclidean'))
+                meta_matrix = DistanceMatrix(meta_dist, ids=df_merged['SampleID'])
+                stat, p_value, _ = mantel(distance_matrix, meta_matrix, permutations=perm_count)
+                st.success(f'Mantel test R = {stat:.4f}, p = {p_value:.4g}')
+                st.caption('🔍 Mantel test 是用來檢驗兩個距離矩陣之間的相關性，適用於連續變數。')
 
 
 if __name__ == '__main__':
-    main()
+    import sys
+    try:
+        from streamlit.web import cli as stcli
+        if st.runtime.exists():
+            main()
+        else:
+            print("🚀 偵測到您直接執行了 Python 檔案，系統將自動為您切換至 Streamlit 網頁伺服器模式啟動...")
+            sys.argv = ["streamlit", "run", sys.argv[0]]
+            sys.exit(stcli.main())
+    except Exception:
+        main()
