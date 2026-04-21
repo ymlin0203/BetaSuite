@@ -346,6 +346,107 @@ class Pipeline:
                 stat, p_value, _ = mantel(distance_matrix, meta_matrix, permutations=perm_count)
                 st.success(f'Mantel test R = {stat:.4f}, p = {p_value:.4g}')
                 st.caption('🔍 Mantel test 是用來檢驗兩個距離矩陣之間的相關性，適用於連續變數。')
+        # --- Batch Analysis Section ---
+        st.markdown('---')
+        st.subheader('📊 批次自動統計分析 (一鍵跑完所有變數)')
+        st.write('由於臨床變數眾多，您可以使用這個功能自動遍歷所有變數，找出具有顯著差異的組別。')
+        if st.button('🚀 開始批次檢定 (這可能需要一段時間)'):
+            results = []
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            total_vars = len(meta_cols)
+            for i, var in enumerate(meta_cols):
+                status_text.text(f'正在分析 ({i+1}/{total_vars}): {var} ...')
+                
+                # Copy and filter metadata for the current variable
+                df_curr = df_meta[['SampleID', var]].copy()
+                df_curr = df_curr[df_curr[var].notna() & (df_curr[var].astype(str).str.strip() != '')]
+                
+                # Get valid IDs and filter distance matrix
+                valid_ids = df_curr['SampleID'].tolist()
+                if len(valid_ids) < 3:
+                    progress_bar.progress((i + 1) / total_vars)
+                    continue # Not enough samples
+                
+                curr_dist = full_distance_matrix.filter(valid_ids)
+                df_curr = df_curr.set_index('SampleID')
+                
+                if df_curr[var].nunique() < 2:
+                    progress_bar.progress((i + 1) / total_vars)
+                    continue # Need at least 2 groups for any meaningful comparison
+                
+                # Determine categorical vs continuous
+                is_numeric = False
+                try:
+                    df_curr_numeric = pd.to_numeric(df_curr[var], errors='coerce')
+                    if df_curr_numeric.notna().sum() > len(df_curr) * 0.5: # Mostly numeric
+                        is_numeric = True
+                        df_curr[var] = df_curr_numeric
+                except Exception:
+                    pass
+                
+                random.seed(random_seed)
+                np.random.seed(random_seed)
+                
+                # Our rule: if not numeric OR nunique <= 10 => Categorical (ANOSIM)
+                if not is_numeric or df_curr[var].nunique() <= 10:
+                    test_type = 'Categorical (ANOSIM)'
+                    try:
+                        group_series = df_curr[var].astype(str)
+                        res = anosim(curr_dist, group_series, permutations=perm_count)
+                        stat_val = res['test statistic']
+                        p_val = res['p-value']
+                    except Exception as e:
+                        progress_bar.progress((i + 1) / total_vars)
+                        continue
+                else:
+                    test_type = 'Continuous (Mantel)'
+                    try:
+                        df_curr = df_curr.dropna(subset=[var])
+                        if len(df_curr) < 3: 
+                            progress_bar.progress((i + 1) / total_vars)
+                            continue
+                        curr_dist = full_distance_matrix.filter(df_curr.index.tolist())
+                        
+                        meta_dist_arr = squareform(pdist(df_curr[[var]].values, metric='euclidean'))
+                        meta_dist_mat = DistanceMatrix(meta_dist_arr, ids=df_curr.index)
+                        stat_val, p_val, _ = mantel(curr_dist, meta_dist_mat, permutations=perm_count)
+                    except Exception as e:
+                        progress_bar.progress((i + 1) / total_vars)
+                        continue
+                
+                results.append({
+                    '變數名稱 (Variable)': var,
+                    '變數型態 (Data Type)': '類別型 (Categorical)' if 'Categorical' in test_type else '連續型 (Continuous)',
+                    '統計方法 (Method)': 'ANOSIM' if 'Categorical' in test_type else 'Mantel test',
+                    '有效樣本數 (N)': len(valid_ids),
+                    'Statistic (R)': stat_val,
+                    'P-value': p_val
+                })
+                
+                progress_bar.progress((i + 1) / total_vars)
+            
+            status_text.text('✅ 批次分析完成！')
+            
+            if results:
+                df_results = pd.DataFrame(results)
+                df_results = df_results.sort_values('P-value', ascending=True).reset_index(drop=True)
+                st.dataframe(df_results)
+                
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df_results.to_excel(writer, index=False, sheet_name='Statistical_Results')
+                output.seek(0)
+                
+                st.download_button(
+                    label="📥 下載 Excel 分析報告",
+                    data=output,
+                    file_name="Batch_PCoA_Statistics.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.warning("沒有成功完成任何變數的分析（可能是樣本數不足或分群異常）。")
 
 
 if __name__ == '__main__':
