@@ -144,13 +144,15 @@ class Pipeline:
         st.subheader('📏 2D 圖形顯示與進階美化 (期刊格式)')
         lock_aspect = st.checkbox('🔒 啟用「頂級發表格式」排版 (主圖不受圖例擠壓)', value=True)
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             fig_width = st.number_input('圖形基礎寬度', min_value=4.0, max_value=30.0, value=6.0, step=0.5)
         with col2:
             fig_height = st.number_input('圖形基礎高度', min_value=4.0, max_value=30.0, value=6.0, step=0.5)
         with col3:
             marker_size = st.number_input('點的尺寸 (Marker Size)', min_value=10, max_value=600, value=100, step=10)
+        with col4:
+            spine_width = st.number_input('外框線粗細', min_value=0.0, max_value=10.0, value=1.5, step=0.5)
 
         c1, c2, c3, c4 = st.columns(4)
         with c1:
@@ -274,8 +276,11 @@ class Pipeline:
                 ax.set_aspect('auto')
 
             for spine in ax.spines.values():
-                spine.set_visible(True)
-                spine.set_linewidth(2.5) # 讓邊界稍微加粗更有質感
+                if spine_width > 0:
+                    spine.set_visible(True)
+                    spine.set_linewidth(spine_width)
+                else:
+                    spine.set_visible(False)
 
             st.pyplot(fig)
 
