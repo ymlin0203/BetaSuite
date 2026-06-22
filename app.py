@@ -24,7 +24,7 @@ layout="wide"
 )
 
 def inject_apple_like_css():
-st.markdown(
+    st.markdown(
 """ <style>
 .stApp {
 background: linear-gradient(180deg, #F5F5F7 0%, #FFFFFF 100%);
