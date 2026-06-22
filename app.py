@@ -140,7 +140,7 @@ color: #1D1D1F;
     """,
     unsafe_allow_html=True
 )
-```
+
 
 def safe_key(text: str) -> str:
 return "".join(ch if ch.isalnum() else "_" for ch in str(text))
@@ -201,7 +201,7 @@ if distance_file is None or metadata_file is None:
     return
 
 Pipeline().main(distance_file, metadata_file)
-```
+
 
 class Pipeline:
 def main(self, distance_file: UploadedFile, metadata_file: UploadedFile):
@@ -211,7 +211,7 @@ except Exception as e:
 st.error(f"🚩 距離矩陣讀取失敗：{e}")
 st.stop()
 
-```
+
     df_dist.index = df_dist.index.astype(str).str.strip()
     df_dist.columns = df_dist.columns.astype(str).str.strip()
 
@@ -814,7 +814,6 @@ st.stop()
 
         else:
             st.warning("沒有成功完成任何變數的分析，可能是樣本數不足、分群異常或資料型態不適合。")
-```
 
 if **name** == "**main**":
 main()
