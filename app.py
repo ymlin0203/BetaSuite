@@ -292,14 +292,17 @@ class Pipeline:
                 )
                 st.plotly_chart(fig3d, use_container_width=True)
 
-                for fmt in ['png', 'pdf', 'svg']:
-                    image_bytes = fig3d.to_image(format=fmt, scale=5)
-                    st.download_button(
-                        f'📎 下載 3D 圖檔 ({fmt.upper()})',
-                        data=image_bytes,
-                        file_name=f"{color_var}_3D_PCoA.{fmt}",
-                        mime='image/svg+xml' if fmt == 'svg' else f'image/{fmt}',
-                    )
+                html_bytes = fig3d.to_html(include_plotlyjs="cdn").encode("utf-8")
+
+                st.download_button(
+                label="📎 下載 3D 互動圖檔 (HTML)",
+                data=html_bytes,
+                file_name=f"{color_var}_3D_PCoA.html",
+                mime="text/html",
+                key=f"download_3d_html_{color_var}"
+                )
+
+                st.info("3D 圖已改為 HTML 互動格式下載，可避免 Streamlit Cloud 因 Kaleido / Chrome 缺少而發生錯誤。")
             else:
                 st.info('⚠️ 無法進行 3D 繪圖（缺少 PC1~PC3）')
 
