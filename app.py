@@ -1,36 +1,3 @@
-import sys
-import subprocess
-import importlib
-
-def _auto_install():
-    required = {
-        "seaborn": "seaborn",
-        "plotly": "plotly",
-        "skbio": "scikit-bio",
-        "openpyxl": "openpyxl"
-    }
-    missing = []
-    for module_name, pip_name in required.items():
-        try:
-            importlib.import_module(module_name)
-        except ImportError:
-            missing.append(pip_name)
-    
-    if missing:
-        print("\n" + "="*50)
-        print(f"⚠️ 嘿！偵測到您的環境缺少必要套件: {', '.join(missing)}")
-        print("🔄 系統現在正在為您「全自動下載與安裝」，請稍候...(這可能需要一到兩分鐘)")
-        print("="*50 + "\n")
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", *missing])
-            print("\n✅ 安裝大功告成！請馬上在終端機【再按一次「上」方向鍵】，重新執行 `streamlit run Beta.py` 來啟動網站！")
-            sys.exit(0)
-        except Exception as e:
-            print(f"\n❌ 自動安裝失敗，請您嘗試手動在終端機貼上執行: \n{sys.executable} -m pip install {' '.join(missing)}")
-            sys.exit(1)
-
-_auto_install()
-
 import streamlit as st
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 import pandas as pd
@@ -53,8 +20,16 @@ st.set_page_config(page_title='PCoA GUI', layout='wide')
 def main():
     st.title('🧬 PCoA GUI ')
 
-    distance_file: UploadedFile = st.file_uploader('📂 上傳距離矩陣 (.tsv / .csv)', type=['tsv', 'csv'])
-    metadata_file: UploadedFile = st.file_uploader('📂 上傳 metadata (.xlsx / .csv)', type=['xlsx', 'csv'])
+    distance_file: UploadedFile = st.file_uploader(
+        '📂 上傳距離矩陣 (.tsv / .csv)',
+        type=['tsv', 'csv'],
+        key='distance_matrix_uploader'
+    )
+    metadata_file: UploadedFile = st.file_uploader(
+        '📂 上傳 metadata (.xlsx / .csv)',
+        type=['xlsx', 'csv'],
+        key='metadata_uploader'
+    )
 
     if distance_file is None or metadata_file is None:
         st.info('📥 請依序上傳距離矩陣與 metadata 檔案')
@@ -96,6 +71,10 @@ class Pipeline:
                     st.error(f"📍 以下 {len(in_dist_not_meta)} 個樣本出現在【距離矩陣】，但【Metadata】裡找不到 (請檢查大小寫與空白)：\n\n" + ", ".join(in_dist_not_meta))
                 if in_meta_not_dist:
                     st.warning(f"📍 以下 {len(in_meta_not_dist)} 個樣本出現在【Metadata】，但【距離矩陣】裡找不到：\n\n" + ", ".join(in_meta_not_dist))
+
+        if len(common_ids) < 3:
+            st.error('🚩 距離矩陣與 metadata 可配對樣本數不足，至少需要 3 個共同 SampleID 才能進行 PCoA。')
+            st.stop()
 
         df_meta = df_meta.loc[common_ids].reset_index()
         df_dist = df_dist.loc[common_ids, common_ids]
@@ -455,14 +434,4 @@ class Pipeline:
 
 
 if __name__ == '__main__':
-    import sys
-    try:
-        from streamlit.web import cli as stcli
-        if st.runtime.exists():
-            main()
-        else:
-            print("🚀 偵測到您直接執行了 Python 檔案，系統將自動為您切換至 Streamlit 網頁伺服器模式啟動...")
-            sys.argv = ["streamlit", "run", sys.argv[0]]
-            sys.exit(stcli.main())
-    except Exception:
-        main()
+    main()
