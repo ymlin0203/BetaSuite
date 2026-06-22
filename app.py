@@ -17,7 +17,7 @@ from streamlit.runtime.uploaded_file_manager import UploadedFile
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 
-APP_VERSION = "BetaSuite Apple-inspired 2026-06-22"
+APP_VERSION = "BetaSuite Apple Dashboard 2026-06-22"
 
 st.set_page_config(
     page_title="BetaSuite | Beta Diversity Analysis",
@@ -42,7 +42,8 @@ def inject_apple_like_css() -> None:
                 --apple-border: #d2d2d7;
                 --apple-blue: #0071e3;
                 --apple-blue-dark: #005bb5;
-                --apple-shadow: 0 18px 55px rgba(0, 0, 0, 0.055);
+                --apple-soft-blue: #f5faff;
+                --apple-shadow: 0 18px 48px rgba(0, 0, 0, 0.055);
             }
 
             .stApp {
@@ -62,8 +63,8 @@ def inject_apple_like_css() -> None:
             }
 
             .block-container {
-                max-width: 1320px;
-                padding-top: 1.4rem;
+                max-width: 1340px;
+                padding-top: 1.2rem;
                 padding-bottom: 5rem;
             }
 
@@ -72,13 +73,13 @@ def inject_apple_like_css() -> None:
                 justify-content: space-between;
                 align-items: center;
                 gap: 24px;
-                padding: 12px 22px;
+                padding: 11px 20px;
                 margin: 0 auto 22px auto;
-                max-width: 980px;
+                max-width: 1000px;
                 border-radius: 999px;
-                background: rgba(255, 255, 255, 0.84);
+                background: rgba(255, 255, 255, 0.82);
                 border: 1px solid rgba(0, 0, 0, 0.06);
-                box-shadow: 0 10px 28px rgba(0, 0, 0, 0.035);
+                box-shadow: 0 10px 26px rgba(0, 0, 0, 0.035);
                 backdrop-filter: saturate(180%) blur(20px);
             }
 
@@ -115,15 +116,14 @@ def inject_apple_like_css() -> None:
             .apple-hero::after {
                 content: "";
                 position: absolute;
-                right: -110px;
-                top: -110px;
-                width: 440px;
-                height: 440px;
+                right: -120px;
+                top: -120px;
+                width: 460px;
+                height: 460px;
                 border-radius: 50%;
                 background:
                     radial-gradient(circle at 35% 35%, rgba(0, 113, 227, 0.30), transparent 42%),
                     radial-gradient(circle at 65% 65%, rgba(175, 82, 222, 0.18), transparent 45%);
-                filter: blur(2px);
                 opacity: 0.95;
             }
 
@@ -141,7 +141,7 @@ def inject_apple_like_css() -> None:
             .apple-hero h1 {
                 position: relative;
                 z-index: 2;
-                max-width: 820px;
+                max-width: 880px;
                 margin: 0;
                 color: var(--apple-text);
                 font-size: clamp(48px, 6.5vw, 86px);
@@ -153,7 +153,7 @@ def inject_apple_like_css() -> None:
             .apple-hero p {
                 position: relative;
                 z-index: 2;
-                max-width: 760px;
+                max-width: 780px;
                 margin: 26px 0 0 0;
                 color: var(--apple-muted);
                 font-size: clamp(20px, 2.2vw, 28px);
@@ -198,12 +198,16 @@ def inject_apple_like_css() -> None:
                 margin: 0 0 30px 0;
             }
 
-            .feature-card {
+            .feature-card,
+            .analysis-card {
                 background: var(--apple-card);
                 border: 1px solid rgba(0, 0, 0, 0.055);
                 border-radius: 28px;
                 padding: 26px 28px;
                 box-shadow: 0 12px 34px rgba(0, 0, 0, 0.04);
+            }
+
+            .feature-card {
                 min-height: 160px;
             }
 
@@ -226,6 +230,70 @@ def inject_apple_like_css() -> None:
                 color: var(--apple-muted);
                 font-size: 15px;
                 line-height: 1.5;
+            }
+
+            .dashboard-hero {
+                background: linear-gradient(180deg, #ffffff 0%, #fbfbfd 100%);
+                border: 1px solid rgba(0, 0, 0, 0.055);
+                border-radius: 30px;
+                padding: 28px 32px;
+                margin-bottom: 24px;
+                box-shadow: 0 12px 34px rgba(0, 0, 0, 0.04);
+            }
+
+            .dashboard-hero .eyebrow {
+                color: var(--apple-blue);
+                font-size: 13px;
+                font-weight: 800;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                margin-bottom: 8px;
+            }
+
+            .dashboard-hero h1 {
+                margin: 0;
+                color: var(--apple-text);
+                font-size: clamp(34px, 4vw, 54px);
+                line-height: 1.02;
+                letter-spacing: -0.055em;
+                font-weight: 850;
+            }
+
+            .dashboard-hero p {
+                margin: 12px 0 0 0;
+                color: var(--apple-muted);
+                font-size: 17px;
+                line-height: 1.5;
+                max-width: 860px;
+            }
+
+            .status-bar {
+                display: flex;
+                gap: 12px;
+                flex-wrap: wrap;
+                margin: 0 0 24px 0;
+            }
+
+            .status-pill {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 9px 14px;
+                background: #ffffff;
+                border: 1px solid rgba(0, 0, 0, 0.055);
+                border-radius: 999px;
+                color: var(--apple-muted);
+                font-size: 14px;
+                font-weight: 700;
+                box-shadow: 0 8px 22px rgba(0, 0, 0, 0.03);
+            }
+
+            .status-dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: #34c759;
+                display: inline-block;
             }
 
             .section-title {
@@ -337,7 +405,7 @@ def inject_apple_like_css() -> None:
             div[data-testid="stAlert"] {
                 border-radius: 22px;
                 border: 1px solid #dcecff;
-                background: #f5faff;
+                background: var(--apple-soft-blue);
                 color: var(--apple-text);
             }
 
@@ -366,7 +434,7 @@ def inject_apple_like_css() -> None:
     )
 
 
-def render_landing() -> None:
+def render_nav() -> None:
     st.markdown(
         """
         <div class="apple-nav">
@@ -379,7 +447,15 @@ def render_landing() -> None:
                 <span>Export</span>
             </div>
         </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
+
+def render_landing() -> None:
+    render_nav()
+    st.markdown(
+        """
         <section class="apple-hero">
             <div class="apple-eyebrow">BetaSuite</div>
             <h1>Beta diversity.<br>Beautifully analyzed.</h1>
@@ -392,6 +468,37 @@ def render_landing() -> None:
                 <span class="apple-pill secondary">Designed for research figures</span>
             </div>
         </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_dashboard_header() -> None:
+    render_nav()
+    st.markdown(
+        """
+        <section class="dashboard-hero">
+            <div class="eyebrow">Analysis workspace</div>
+            <h1>Your beta diversity dashboard.</h1>
+            <p>
+                Data have been loaded. Review matched samples, generate PCoA figures,
+                inspect ANOSIM or Mantel statistics, and export publication-ready outputs.
+            </p>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_status_bar(matched: int, variables: int) -> None:
+    st.markdown(
+        f"""
+        <div class="status-bar">
+            <div class="status-pill"><span class="status-dot"></span>Data loaded</div>
+            <div class="status-pill"><span class="status-dot"></span>{matched} matched samples</div>
+            <div class="status-pill"><span class="status-dot"></span>{variables} metadata variables</div>
+            <div class="status-pill"><span class="status-dot"></span>PCoA ready</div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
@@ -422,9 +529,43 @@ def render_feature_cards() -> None:
     )
 
 
+def interpret_result(method: str, statistic: float, p_value: float) -> str:
+    p_text = "statistically significant" if p_value < 0.05 else "not statistically significant"
+
+    if method == "ANOSIM":
+        r = abs(statistic)
+        if r < 0.10:
+            strength = "very weak group separation"
+        elif r < 0.25:
+            strength = "weak group separation"
+        elif r < 0.50:
+            strength = "moderate group separation"
+        else:
+            strength = "strong group separation"
+
+        return (
+            f"Interpretation: The selected grouping variable is {p_text} "
+            f"and shows {strength} in beta diversity."
+        )
+
+    r = abs(statistic)
+    if r < 0.10:
+        strength = "very weak association"
+    elif r < 0.30:
+        strength = "weak association"
+    elif r < 0.50:
+        strength = "moderate association"
+    else:
+        strength = "strong association"
+
+    return (
+        f"Interpretation: The selected continuous variable is {p_text} "
+        f"and shows a {strength} with the distance matrix."
+    )
+
+
 def main() -> None:
     inject_apple_like_css()
-    render_landing()
 
     with st.sidebar:
         st.markdown("### 🧬 BetaSuite")
@@ -433,18 +574,19 @@ def main() -> None:
         st.markdown("### 1. Data Input")
 
         distance_file: UploadedFile = st.file_uploader(
-            "上傳距離矩陣 (.tsv / .csv)",
+            "Distance matrix (.tsv / .csv)",
             type=["tsv", "csv"],
             key="distance_matrix_uploader",
         )
 
         metadata_file: UploadedFile = st.file_uploader(
-            "上傳 metadata (.xlsx / .csv)",
+            "Metadata (.xlsx / .csv)",
             type=["xlsx", "csv"],
             key="metadata_uploader",
         )
 
     if distance_file is None or metadata_file is None:
+        render_landing()
         st.info("📥 請先在左側上傳距離矩陣與 metadata 檔案。")
         render_feature_cards()
         st.markdown('<div class="section-title">Workflow</div>', unsafe_allow_html=True)
@@ -454,6 +596,7 @@ def main() -> None:
         c3.metric("Step 3", "Export results")
         return
 
+    render_dashboard_header()
     Pipeline().main(distance_file, metadata_file)
 
 
@@ -468,6 +611,8 @@ class Pipeline:
 
         in_dist_not_meta = dist_ids_set - meta_ids_set
         in_meta_not_dist = meta_ids_set - dist_ids_set
+
+        render_status_bar(matched=len(common_ids), variables=len(df_meta.columns))
 
         st.markdown('<div class="section-title">Data Overview</div>', unsafe_allow_html=True)
         d1, d2, d3, d4 = st.columns(4)
@@ -640,7 +785,13 @@ class Pipeline:
             show_title = st.checkbox("顯示上方主標題", value=False, key="show_title")
             show_legend_box = st.checkbox("顯示圖例周圍方框", value=False, key="show_legend_box")
             force_equal = st.checkbox("📐 鎖定 PCoA 真實等比例", value=False, key="force_equal")
-            axis_mode = st.radio("座標範圍模式", ["自動（每次資料不同）", "固定等比例（推薦）", "手動固定"], index=0, key="axis_mode")
+
+            axis_mode = st.radio(
+                "座標範圍模式",
+                ["自動（每次資料不同）", "固定等比例（推薦）", "手動固定"],
+                index=0,
+                key="axis_mode",
+            )
 
             st.markdown("---")
             st.markdown("### 4. Statistics")
@@ -670,7 +821,12 @@ class Pipeline:
             "random_seed": random_seed,
         }
 
-    def _prepare_color_variable(self, df_merged: pd.DataFrame, color_var: str, mode: str) -> tuple[str, str, dict[str, str], pd.DataFrame]:
+    def _prepare_color_variable(
+        self,
+        df_merged: pd.DataFrame,
+        color_var: str,
+        mode: str,
+    ) -> tuple[str, str, dict[str, Any], pd.DataFrame]:
         if mode == "類別型" or (mode == "自動偵測" and df_merged[color_var].nunique() <= 10):
             df_merged[color_var] = df_merged[color_var].astype(str)
             palette = st.sidebar.selectbox("🎨 色盤（類別型）", ["Set1", "Set2", "tab10", "Dark2"], index=0, key="categorical_palette")
@@ -678,13 +834,20 @@ class Pipeline:
 
         df_merged[color_var] = pd.to_numeric(df_merged[color_var], errors="coerce")
         df_merged = df_merged[df_merged[color_var].notna()].copy()
+
         if df_merged.empty:
             st.error("🚩 此連續變數無法轉換成有效數值。")
             st.stop()
+
         palette = st.sidebar.selectbox("🎨 色盤（連續型）", ["viridis", "plasma", "cividis"], index=0, key="continuous_palette")
         return "continuous", palette, {"color_continuous_scale": palette}, df_merged
 
-    def _get_axis_limits(self, axis_mode: str, x_vals_tmp: pd.Series, y_vals_tmp: pd.Series):
+    def _get_axis_limits(
+        self,
+        axis_mode: str,
+        x_vals_tmp: pd.Series,
+        y_vals_tmp: pd.Series,
+    ) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
         if axis_mode == "固定等比例（推薦）":
             pad_ratio = st.sidebar.slider("邊界留白比例", 0.0, 0.5, 0.10, 0.01, key="pad_ratio")
             limit = float(np.max(np.abs(np.r_[x_vals_tmp.values, y_vals_tmp.values])) * (1.0 + pad_ratio))
@@ -702,7 +865,7 @@ class Pipeline:
     def _render_visualization(
         self,
         df_merged: pd.DataFrame,
-        pcoa_results: Any,
+        pcoa_results,
         x_vals_tmp: pd.Series,
         y_vals_tmp: pd.Series,
         x_axis: str,
@@ -710,9 +873,9 @@ class Pipeline:
         color_var: str,
         plot_kind: str,
         palette: str,
-        color_args: dict[str, str],
-        xlim: tuple[float, float] | None,
-        ylim: tuple[float, float] | None,
+        color_args: dict[str, Any],
+        xlim,
+        ylim,
         controls: dict[str, Any],
     ) -> None:
         st.markdown('<div class="section-title">PCoA Visualization</div>', unsafe_allow_html=True)
@@ -720,18 +883,18 @@ class Pipeline:
 
         if controls["view_mode"] == "2D":
             self._render_2d_plot(
-                df_merged,
-                pcoa_results,
-                x_vals_tmp,
-                y_vals_tmp,
-                x_axis,
-                y_axis,
-                color_var,
-                plot_kind,
-                palette,
-                xlim,
-                ylim,
-                controls,
+                df_merged=df_merged,
+                pcoa_results=pcoa_results,
+                x_vals_tmp=x_vals_tmp,
+                y_vals_tmp=y_vals_tmp,
+                x_axis=x_axis,
+                y_axis=y_axis,
+                color_var=color_var,
+                plot_kind=plot_kind,
+                palette=palette,
+                xlim=xlim,
+                ylim=ylim,
+                controls=controls,
             )
         else:
             self._render_3d_plot(df_merged, color_var, color_args)
@@ -739,7 +902,7 @@ class Pipeline:
     def _render_2d_plot(
         self,
         df_merged: pd.DataFrame,
-        pcoa_results: Any,
+        pcoa_results,
         x_vals_tmp: pd.Series,
         y_vals_tmp: pd.Series,
         x_axis: str,
@@ -747,8 +910,8 @@ class Pipeline:
         color_var: str,
         plot_kind: str,
         palette: str,
-        xlim: tuple[float, float] | None,
-        ylim: tuple[float, float] | None,
+        xlim,
+        ylim,
         controls: dict[str, Any],
     ) -> None:
         fig_width = controls["fig_width"]
@@ -757,6 +920,7 @@ class Pipeline:
 
         if lock_aspect:
             fig = plt.figure(figsize=(fig_width, fig_height))
+
             # 保留原本方框固定邏輯
             square_size = fig_height * 0.75
             ax_w = square_size / fig_width
@@ -791,6 +955,7 @@ class Pipeline:
                 ax=ax,
                 zorder=3,
             )
+
             ax.legend(
                 bbox_to_anchor=(1.05, 1.0),
                 loc="upper left",
@@ -811,6 +976,7 @@ class Pipeline:
                 alpha=point_alpha,
                 zorder=3,
             )
+
             if lock_aspect:
                 cax_left = left_margin + ax_w + 0.03
                 cax = fig.add_axes([cax_left, bottom_margin, 0.03, ax_h])
@@ -826,6 +992,7 @@ class Pipeline:
 
         var_x = float(pcoa_results.proportion_explained[x_axis] * 100)
         var_y = float(pcoa_results.proportion_explained[y_axis] * 100)
+
         ax.set_xlabel(f"{x_axis} ({var_x:.2f}%)", fontsize=24)
         ax.set_ylabel(f"{y_axis} ({var_y:.2f}%)", fontsize=24)
 
@@ -855,6 +1022,7 @@ class Pipeline:
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=1200, bbox_inches="tight", transparent=False)
         buf.seek(0)
+
         st.download_button(
             "📎 下載 2D 圖檔 (PNG, 1200 dpi)",
             data=buf,
@@ -862,10 +1030,12 @@ class Pipeline:
             mime="image/png",
             key=f"download_2d_png_{safe_key(color_var)}",
         )
+
         plt.close(fig)
 
-    def _render_3d_plot(self, df_merged: pd.DataFrame, color_var: str, color_args: dict[str, str]) -> None:
+    def _render_3d_plot(self, df_merged: pd.DataFrame, color_var: str, color_args: dict[str, Any]) -> None:
         has_pc1_to_3 = all(pc in df_merged.columns for pc in ["PC1", "PC2", "PC3"])
+
         if not has_pc1_to_3:
             st.info("⚠️ 無法進行 3D 繪圖，因為缺少 PC1、PC2 或 PC3。")
             return
@@ -880,8 +1050,11 @@ class Pipeline:
             labels={"PC1": "PC1", "PC2": "PC2", "PC3": "PC3"},
             **color_args,
         )
+
         st.plotly_chart(fig3d, use_container_width=True)
+
         html_bytes = fig3d.to_html(include_plotlyjs="cdn", full_html=True).encode("utf-8")
+
         st.download_button(
             label="📎 下載 3D 互動圖檔 (HTML)",
             data=html_bytes,
@@ -889,6 +1062,7 @@ class Pipeline:
             mime="text/html",
             key=f"download_3d_html_{safe_key(color_var)}",
         )
+
         st.info("3D 圖已改為 HTML 互動格式下載，可避免 Streamlit Cloud 因 Kaleido / Chrome 缺少而發生錯誤。")
 
     def _run_statistics(
@@ -908,31 +1082,45 @@ class Pipeline:
 
         selected_coords = df_merged[["SampleID", x_axis, y_axis]].copy()
         distance_matrix = full_distance_matrix.filter(df_merged["SampleID"].tolist())
+
         random.seed(random_seed)
         np.random.seed(random_seed)
 
         if plot_kind == "categorical":
             group_series = df_merged.set_index("SampleID").loc[selected_coords["SampleID"], color_var]
+
             if group_series.nunique() < 2:
                 st.warning("⚠️ 此類別變數少於 2 組，無法進行 ANOSIM。")
                 return
+
             try:
                 result = anosim(distance_matrix, group_series, permutations=perm_count)
+                stat = float(result["test statistic"])
+                p_value = float(result["p-value"])
+
                 r1, r2, r3 = st.columns(3)
                 r1.metric("Method", "ANOSIM")
-                r2.metric("Statistic R", f'{result["test statistic"]:.4f}')
-                r3.metric("P-value", f'{result["p-value"]:.4g}')
+                r2.metric("Statistic R", f"{stat:.4f}")
+                r3.metric("P-value", f"{p_value:.4g}")
+
+                st.info(interpret_result("ANOSIM", stat, p_value))
             except Exception as e:
                 st.error(f"🚩 ANOSIM 計算失敗：{e}")
+
         else:
             try:
                 meta_dist = squareform(pdist(df_merged[[color_var]].values, metric="euclidean"))
                 meta_matrix = DistanceMatrix(meta_dist, ids=df_merged["SampleID"])
                 stat, p_value, _ = mantel(distance_matrix, meta_matrix, permutations=perm_count)
+                stat = float(stat)
+                p_value = float(p_value)
+
                 r1, r2, r3 = st.columns(3)
                 r1.metric("Method", "Mantel test")
                 r2.metric("Statistic R", f"{stat:.4f}")
                 r3.metric("P-value", f"{p_value:.4g}")
+
+                st.info(interpret_result("Mantel test", stat, p_value))
                 st.caption("🔍 Mantel test 是用來檢驗兩個距離矩陣之間的相關性，適用於連續變數。")
             except Exception as e:
                 st.error(f"🚩 Mantel test 計算失敗：{e}")
@@ -952,15 +1140,18 @@ class Pipeline:
         if not st.button("🚀 開始批次檢定", key="batch_analysis_button"):
             return
 
-        results: list[dict[str, Any]] = []
+        results = []
         progress_bar = st.progress(0)
         status_text = st.empty()
+
         total_vars = len(meta_cols)
 
         for i, var in enumerate(meta_cols):
             status_text.text(f"正在分析 ({i + 1}/{total_vars}): {var} ...")
+
             df_curr = df_meta[["SampleID", var]].copy()
             df_curr = df_curr[df_curr[var].notna() & (df_curr[var].astype(str).str.strip() != "")]
+
             valid_ids = df_curr["SampleID"].tolist()
 
             if len(valid_ids) < 3:
@@ -975,6 +1166,7 @@ class Pipeline:
                 continue
 
             is_numeric = False
+
             try:
                 df_curr_numeric = pd.to_numeric(df_curr[var], errors="coerce")
                 if df_curr_numeric.notna().sum() > len(df_curr) * 0.5:
@@ -992,21 +1184,26 @@ class Pipeline:
                     if group_series.nunique() < 2:
                         progress_bar.progress((i + 1) / total_vars)
                         continue
+
                     res = anosim(curr_dist, group_series, permutations=perm_count)
                     stat_val = res["test statistic"]
                     p_val = res["p-value"]
                     n_val = len(group_series)
                     method = "ANOSIM"
                     dtype = "類別型 (Categorical)"
+
                 except Exception:
                     progress_bar.progress((i + 1) / total_vars)
                     continue
+
             else:
                 try:
                     df_curr = df_curr.dropna(subset=[var])
+
                     if len(df_curr) < 3:
                         progress_bar.progress((i + 1) / total_vars)
                         continue
+
                     curr_dist = full_distance_matrix.filter(df_curr.index.tolist())
                     meta_dist_arr = squareform(pdist(df_curr[[var]].values, metric="euclidean"))
                     meta_dist_mat = DistanceMatrix(meta_dist_arr, ids=df_curr.index)
@@ -1014,6 +1211,7 @@ class Pipeline:
                     n_val = len(df_curr)
                     method = "Mantel test"
                     dtype = "連續型 (Continuous)"
+
                 except Exception:
                     progress_bar.progress((i + 1) / total_vars)
                     continue
@@ -1028,20 +1226,24 @@ class Pipeline:
                     "P-value": p_val,
                 }
             )
+
             progress_bar.progress((i + 1) / total_vars)
 
         status_text.text("✅ 批次分析完成！")
+
         if not results:
             st.warning("沒有成功完成任何變數的分析，可能是樣本數不足、分群異常或資料型態不適合。")
             return
 
         df_results = pd.DataFrame(results)
         df_results = df_results.sort_values("P-value", ascending=True).reset_index(drop=True)
+
         st.dataframe(df_results, use_container_width=True)
 
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df_results.to_excel(writer, index=False, sheet_name="Statistical_Results")
+
         output.seek(0)
 
         st.download_button(
