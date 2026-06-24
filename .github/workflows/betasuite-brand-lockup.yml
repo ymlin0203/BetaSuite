@@ -1,0 +1,137 @@
+name: Patch BetaSuite brand lockup
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-brand-lockup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Patch app.py brand title
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('app.py')
+          text = path.read_text(encoding='utf-8')
+
+          css = '''
+            .brand-lockup {
+                position: relative;
+                z-index: 2;
+                display: flex;
+                flex-direction: column;
+                gap: 0.015em;
+            }
+
+            .brand-line {
+                display: block;
+                white-space: normal;
+            }
+
+            .brand-cap {
+                font-size: 1em;
+                font-weight: 900;
+                letter-spacing: -0.05em;
+            }
+
+            .brand-rest {
+                font-size: 0.56em;
+                font-weight: 760;
+                letter-spacing: -0.035em;
+                margin-right: 0.18em;
+                opacity: 0.92;
+                vertical-align: baseline;
+            }
+
+            .brand-connector {
+                font-size: 0.42em;
+                font-weight: 680;
+                letter-spacing: -0.02em;
+                color: var(--apple-muted);
+                margin: 0 0.18em 0 0.04em;
+                vertical-align: baseline;
+            }
+
+            .workspace-hero .brand-lockup {
+                gap: 0;
+            }
+
+            .workspace-hero .brand-rest {
+                font-size: 0.58em;
+            }
+
+            .workspace-hero .brand-connector {
+                font-size: 0.46em;
+            }
+'''
+
+          if '.brand-lockup {' not in text:
+              marker = '            .landing-hero p {'
+              if marker not in text:
+                  raise SystemExit('CSS insertion marker not found')
+              text = text.replace(marker, css + '\n' + marker)
+
+          landing_old = '<h1>Biological Ecosystem<br>Trajectory and Association Suite</h1>'
+          landing_new = '''<h1 class="brand-lockup landing-brand" aria-label="Biological Ecosystem Trajectory and Association Suite">
+                <span class="brand-line">
+                    <span class="brand-cap">B</span><span class="brand-rest">iological</span>
+                    <span class="brand-cap">E</span><span class="brand-rest">cosystem</span>
+                </span>
+                <span class="brand-line">
+                    <span class="brand-cap">T</span><span class="brand-rest">rajectory</span>
+                    <span class="brand-connector">and</span>
+                    <span class="brand-cap">A</span><span class="brand-rest">ssociation</span>
+                    <span class="brand-cap">S</span><span class="brand-rest">uite</span>
+                </span>
+            </h1>'''
+
+          workspace_old = '<h1>Biological Ecosystem Trajectory and Association Suite</h1>'
+          workspace_new = '''<h1 class="brand-lockup workspace-brand" aria-label="Biological Ecosystem Trajectory and Association Suite">
+                <span class="brand-line">
+                    <span class="brand-cap">B</span><span class="brand-rest">iological</span>
+                    <span class="brand-cap">E</span><span class="brand-rest">cosystem</span>
+                </span>
+                <span class="brand-line">
+                    <span class="brand-cap">T</span><span class="brand-rest">rajectory</span>
+                    <span class="brand-connector">and</span>
+                    <span class="brand-cap">A</span><span class="brand-rest">ssociation</span>
+                    <span class="brand-cap">S</span><span class="brand-rest">uite</span>
+                </span>
+            </h1>'''
+
+          if landing_old not in text and 'class="brand-lockup landing-brand"' not in text:
+              raise SystemExit('Landing title marker not found')
+          if workspace_old not in text and 'class="brand-lockup workspace-brand"' not in text:
+              raise SystemExit('Workspace title marker not found')
+
+          text = text.replace(landing_old, landing_new)
+          text = text.replace(workspace_old, workspace_new)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          python -m py_compile app.py
+
+      - name: Commit patched app.py
+        run: |
+          if git diff --quiet app.py; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add app.py
+          git commit -m "Refine BetaSuite acronym typography"
+          git push
