@@ -14,10 +14,10 @@ from skbio.stats.ordination import pcoa
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 
-APP_VERSION = "BetaSuite Dashboard 2026-06-22"
+APP_VERSION = "Biological Ecosystem Trajectory and Association Suite"
 
 st.set_page_config(
-    page_title="BetaSuite | Beta Diversity Analysis",
+    page_title="BetaSuite | Ecosystem Trajectory Analysis",
     page_icon="🧬",
     layout="wide",
 )
@@ -399,10 +399,10 @@ def render_landing_page() -> None:
         """
         <section class="landing-hero">
             <div class="eyebrow">BetaSuite</div>
-            <h1>Beta diversity.<br>Beautifully analyzed.</h1>
+            <h1>Biological Ecosystem<br>Trajectory and Association Suite</h1>
             <p>
-                Upload your distance matrix and metadata to generate publication-ready PCoA plots,
-                ANOSIM statistics, Mantel tests, and batch clinical association reports.
+                An integrated microbiome analytics workspace for beta diversity, ecological trajectory,
+                metadata association testing, and publication-ready visualization.
             </p>
         </section>
         """,
@@ -414,17 +414,17 @@ def render_landing_page() -> None:
         <div class="feature-grid">
             <div class="feature-card">
                 <div class="icon">🧬</div>
-                <h3>Designed for microbiome data.</h3>
-                <p>Match distance matrices with metadata and instantly inspect sample compatibility.</p>
+                <h3>Biological ecosystems.</h3>
+                <p>Match microbiome distance matrices with metadata and inspect sample compatibility instantly.</p>
             </div>
             <div class="feature-card">
                 <div class="icon">📈</div>
-                <h3>Publication-ready PCoA.</h3>
+                <h3>Trajectory visualization.</h3>
                 <p>Generate fixed-frame 2D PCoA plots with consistent legends, axes, and 1200 dpi export.</p>
             </div>
             <div class="feature-card">
                 <div class="icon">🧪</div>
-                <h3>Statistics built in.</h3>
+                <h3>Association testing.</h3>
                 <p>Run ANOSIM for categorical variables and Mantel tests for continuous clinical variables.</p>
             </div>
         </div>
@@ -437,8 +437,8 @@ def render_workspace_header(n_common: int, n_variables: int, distance_name: str,
     st.markdown(
         f"""
         <section class="workspace-hero">
-            <div class="eyebrow">Analysis workspace</div>
-            <h1>BetaSuite Dashboard</h1>
+            <div class="eyebrow">BetaSuite</div>
+            <h1>Biological Ecosystem Trajectory and Association Suite</h1>
             <p>{n_common} matched samples · {n_variables} metadata variables · Distance: {distance_name} · Color: {color_var} · Test: {test_name}</p>
         </section>
 
